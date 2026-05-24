@@ -40,7 +40,7 @@ impl Default for AppConfig {
         Self {
             base_url: "https://openrouter.ai/api/v1".to_string(),
             api_key: String::new(),
-            default_model: "MiMo-V2.5".to_string(),
+            default_model: "mimo-v2.5-pro".to_string(),
             concurrency: 5,
             bilingual: false,
             max_spend_usd: None,

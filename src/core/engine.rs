@@ -4,17 +4,48 @@ use crate::agent::client::TranslationClient;
 use crate::agent::prompt::PromptContext;
 use crate::config::AppConfig;
 use crate::core::parser::{extract_text_chunks, parse_epub, write_epub};
+use crate::core::progress::{NoopProgressReporter, ProgressEvent, ProgressReporter};
 use crate::error::{AppError, Result};
 use scraper::Html;
 use std::collections::HashMap;
 use std::path::Path;
 
 pub async fn run(input: &Path, output: &Path, config: &AppConfig) -> Result<()> {
+    let reporter = NoopProgressReporter;
+    run_with_progress(input, output, config, &reporter).await
+}
+
+pub async fn run_with_progress(
+    input: &Path,
+    output: &Path,
+    config: &AppConfig,
+    reporter: &dyn ProgressReporter,
+) -> Result<()> {
     let source_files = parse_epub(input)?;
     let client = TranslationClient::new(config.clone());
     let mut rendered_files = HashMap::new();
+    let text_entries = source_files
+        .iter()
+        .filter(|entry| entry.is_text)
+        .collect::<Vec<_>>();
+    let total_chunks = text_entries
+        .iter()
+        .map(|entry| {
+            let raw_html = String::from_utf8_lossy(&entry.data).to_string();
+            let document = Html::parse_document(&raw_html);
+            extract_text_chunks(&document).len()
+        })
+        .sum();
 
-    for entry in source_files.iter().filter(|entry| entry.is_text) {
+    reporter.on_event(ProgressEvent::Started {
+        total_text_files: text_entries.len(),
+        total_chunks,
+    });
+
+    for entry in text_entries {
+        reporter.on_event(ProgressEvent::FileStarted {
+            file_name: entry.name.clone(),
+        });
         let raw_html = String::from_utf8_lossy(&entry.data).to_string();
         let document = Html::parse_document(&raw_html);
         let chunks = extract_text_chunks(&document);
@@ -29,15 +60,43 @@ pub async fn run(input: &Path, output: &Path, config: &AppConfig) -> Result<()> 
                 target: chunk.clone(),
                 next_context: String::new(),
             };
-            let translated_chunk = client.translate(&ctx).await?;
-            translated = translated.replace(&chunk, &translated_chunk);
+            match client.translate_with_stats(&ctx).await {
+                Ok(result) => {
+                    reporter.on_event(ProgressEvent::RequestFinished {
+                        usage: result.usage,
+                        retries: result.retries,
+                    });
+                    translated = translated.replace(&chunk, &result.translation);
+                    reporter.on_event(ProgressEvent::ChunkFinished);
+                }
+                Err(error) => {
+                    reporter.on_event(ProgressEvent::ChunkFailed {
+                        error: error.to_string(),
+                    });
+                    reporter.on_event(ProgressEvent::Failed {
+                        error: error.to_string(),
+                    });
+                    return Err(error);
+                }
+            }
         }
 
         rendered_files.insert(entry.name.clone(), translated);
+        reporter.on_event(ProgressEvent::FileFinished);
     }
 
-    write_epub(output, &source_files, &rendered_files)?;
-    Ok(())
+    match write_epub(output, &source_files, &rendered_files) {
+        Ok(()) => {
+            reporter.on_event(ProgressEvent::Completed);
+            Ok(())
+        }
+        Err(error) => {
+            reporter.on_event(ProgressEvent::Failed {
+                error: error.to_string(),
+            });
+            Err(error)
+        }
+    }
 }
 
 pub fn validate_epub_input(input: &Path) -> Result<()> {

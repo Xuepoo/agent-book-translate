@@ -3,6 +3,7 @@
 use crate::error::{AppError, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -110,7 +111,11 @@ impl JobStore {
     }
 
     pub fn load(&self, job_id: &str) -> Result<JobState> {
-        let raw = fs::read_to_string(self.path_for(job_id))?;
+        let path = self.path_for(job_id);
+        if !path.exists() {
+            return Err(AppError::Config(format!("job not found: {job_id}")));
+        }
+        let raw = fs::read_to_string(path)?;
         serde_json::from_str(&raw).map_err(AppError::from)
     }
 
@@ -128,7 +133,7 @@ impl JobStore {
             }
             states.push(read_state_file(&entry.path())?);
         }
-        states.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        states.sort_by_key(|state| Reverse(state.updated_at));
         Ok(states)
     }
 

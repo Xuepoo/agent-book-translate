@@ -71,9 +71,7 @@ impl TranslationClient {
     async fn post_with_retry(&self, body: serde_json::Value) -> Result<TranslationResponse> {
         let mut delay = Duration::from_secs(1);
         let max_attempts = 5usize;
-        let mut retries = 0u64;
-
-        for attempt in 1..=max_attempts {
+        for (retry_count, attempt) in (1..=max_attempts).enumerate() {
             let request = self
                 .http
                 .post(format!("{}/chat/completions", self.config.base_url))
@@ -83,7 +81,10 @@ impl TranslationClient {
             match request.send().await {
                 Ok(resp) if resp.status().is_success() => {
                     let text = resp.text().await.map_err(AppError::from)?;
-                    return Ok(TranslationResponse { text, retries });
+                    return Ok(TranslationResponse {
+                        text,
+                        retries: retry_count as u64,
+                    });
                 }
                 Ok(resp) if resp.status() == StatusCode::TOO_MANY_REQUESTS => {
                     if attempt == max_attempts {
@@ -107,7 +108,6 @@ impl TranslationClient {
                 }
             }
 
-            retries += 1;
             sleep(delay).await;
             delay *= 2;
         }

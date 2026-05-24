@@ -1,9 +1,11 @@
 //! Progress reporting and usage accounting for translation runs.
 
 use crate::job::{JobState, JobStatus, JobStore};
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
@@ -66,6 +68,65 @@ pub struct NoopProgressReporter;
 
 impl ProgressReporter for NoopProgressReporter {
     fn on_event(&self, _event: ProgressEvent) {}
+}
+
+#[derive(Debug, Default)]
+pub struct TerminalProgressReporter {
+    bar: Mutex<Option<ProgressBar>>,
+}
+
+impl TerminalProgressReporter {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn with_bar(&self, f: impl FnOnce(&ProgressBar)) {
+        if let Ok(guard) = self.bar.lock()
+            && let Some(bar) = guard.as_ref()
+        {
+            f(bar);
+        }
+    }
+}
+
+impl ProgressReporter for TerminalProgressReporter {
+    fn on_event(&self, event: ProgressEvent) {
+        match event {
+            ProgressEvent::Started { total_chunks, .. } => {
+                let bar = ProgressBar::new(total_chunks as u64);
+                let style = ProgressStyle::with_template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} chunks {msg}",
+                )
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
+                .progress_chars("=>-");
+                bar.set_style(style);
+                if let Ok(mut guard) = self.bar.lock() {
+                    *guard = Some(bar);
+                }
+            }
+            ProgressEvent::FileStarted { file_name } => {
+                self.with_bar(|bar| bar.set_message(file_name));
+            }
+            ProgressEvent::RequestFinished { usage, retries } => {
+                self.with_bar(|bar| {
+                    bar.set_message(format!(
+                        "tokens={} prompt={} completion={} retries={}",
+                        usage.total_tokens, usage.prompt_tokens, usage.completion_tokens, retries
+                    ));
+                });
+            }
+            ProgressEvent::ChunkFinished => {
+                self.with_bar(|bar| bar.inc(1));
+            }
+            ProgressEvent::Completed => {
+                self.with_bar(|bar| bar.finish_with_message("completed"));
+            }
+            ProgressEvent::Failed { error } | ProgressEvent::ChunkFailed { error } => {
+                self.with_bar(|bar| bar.abandon_with_message(format!("failed: {error}")));
+            }
+            ProgressEvent::FileFinished => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -1,0 +1,15 @@
+/target/
+**/*.rs.bk
+*.snap.new
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+.ruff_cache

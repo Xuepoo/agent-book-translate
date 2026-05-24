@@ -1,0 +1,69 @@
+[package]
+name = "agent-book-translate"
+version = "0.1.0"
+edition = "2024"
+description = "A lightweight, agent-driven CLI ebook translator powered by LLM APIs"
+license = "MIT"
+repository = "https://github.com/Xuepoo/agent-book-translate"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# CLI argument parsing
+clap = { version = "4", features = ["derive"] }
+
+# Configuration
+toml = "0.8"
+dirs = "6"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Archive handling
+zip = "2"
+
+# HTTP client & OpenAI-compatible API
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+async-openai = "0.28"
+
+# HTML/XML parsing
+scraper = "0.22"
+
+# SQLite storage
+rusqlite = { version = "0.33", features = ["bundled"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Progress bar
+indicatif = "0.17"
+
+# Retry with exponential backoff
+tokio-retry = "0.3"
+
+# UUID for workspace isolation
+uuid = { version = "1", features = ["v4"] }
+
+# Regex for JSON healing
+regex = "1"
+
+# Temporary workspace handling
+tempfile = "3"
+
+[dev-dependencies]
+# HTTP mocking for tests
+wiremock = "0.6"
+
+# Snapshot testing
+insta = { version = "1", features = ["serde"] }
+
+[profile.release]
+# Optimize for binary size (< 2MB target)
+lto = true
+strip = true
+panic = "abort"
+opt-level = "z"
+codegen-units = 1

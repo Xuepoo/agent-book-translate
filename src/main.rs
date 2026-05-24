@@ -169,6 +169,9 @@ fn start(args: TranslateArgs) -> Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(err_log));
+    if let Some(xdg_state_home) = env::var_os("XDG_STATE_HOME") {
+        command.env("XDG_STATE_HOME", xdg_state_home);
+    }
     command.spawn()?;
     println!("job_id: {job_id}");
     println!("status: {}", store.path_for(&job_id).display());

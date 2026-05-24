@@ -26,7 +26,7 @@ Example Xiaomi-compatible config:
 ```toml
 base_url = "https://example.invalid/v1"
 api_key = "replace-with-your-token"
-default_model = "MiMo-V2.5"
+default_model = "mimo-v2.5-pro"
 concurrency = 2
 bilingual = false
 http_proxy = "http://127.0.0.1:1080"

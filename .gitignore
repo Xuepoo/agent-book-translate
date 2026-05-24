@@ -13,3 +13,4 @@
 Thumbs.db
 
 .ruff_cache
+.env

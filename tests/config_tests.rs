@@ -9,7 +9,7 @@ fn explicit_config_path_overrides_default_values() {
         &config_path,
         r#"
 base_url = "https://example.invalid/v1"
-default_model = "MiMo-V2.5"
+default_model = "mimo-v2.5-pro"
 concurrency = 2
 bilingual = true
 http_proxy = "http://127.0.0.1:1080"
@@ -23,7 +23,7 @@ intensity = "low"
 
     let config = load_config_file(&config_path).unwrap();
     assert_eq!(config.base_url, "https://example.invalid/v1");
-    assert_eq!(config.default_model, "MiMo-V2.5");
+    assert_eq!(config.default_model, "mimo-v2.5-pro");
     assert_eq!(config.concurrency, 2);
     assert!(config.bilingual);
     assert_eq!(config.http_proxy.as_deref(), Some("http://127.0.0.1:1080"));

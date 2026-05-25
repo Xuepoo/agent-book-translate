@@ -2,6 +2,7 @@
 
 use crate::error::{AppError, Result};
 use scraper::{ElementRef, Html, Selector};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Write};
@@ -16,6 +17,21 @@ pub struct TextChunk {
     pub text: String,
 }
 
+impl TextChunk {
+    pub fn with_source_path(mut self, source_path: impl Into<String>) -> Self {
+        self.source_path = source_path.into();
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedChunk {
+    pub file_name: String,
+    pub chunk_index: usize,
+    pub original: String,
+    pub translated: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EpubEntry {
     pub name: String,
@@ -23,20 +39,28 @@ pub struct EpubEntry {
     pub is_text: bool,
 }
 
-pub fn extract_text_chunks(document: &Html) -> Vec<String> {
+pub fn extract_text_chunks(document: &Html) -> Vec<TextChunk> {
     let mut chunks = Vec::new();
     let selector = Selector::parse("p, h1, h2, h3, li").expect("valid selector");
-    for element in document.select(&selector) {
+    for (index, element) in document.select(&selector).enumerate() {
         let text = flatten_inline_text(&element);
         if !text.trim().is_empty() {
-            chunks.push(text);
+            chunks.push(TextChunk {
+                source_path: String::new(),
+                node_id: Some(format!("{}-{index}", element.value().name())),
+                text,
+            });
         }
     }
     chunks
 }
 
 pub fn extract_and_flatten_text(document: &Html) -> String {
-    extract_text_chunks(document).join("")
+    extract_text_chunks(document)
+        .into_iter()
+        .map(|chunk| chunk.text)
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 pub fn render_bilingual_node(original_html: &str, translated: &str) -> String {
@@ -62,6 +86,28 @@ pub fn render_translation_node(original_html: &str, translated: &str) -> String 
     } else {
         translated.to_string()
     }
+}
+
+pub fn render_file_from_chunks(original_html: &str, chunks: &[RenderedChunk]) -> String {
+    let mut rendered = original_html.to_string();
+    let mut ordered = chunks.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|chunk| Reverse(chunk.chunk_index));
+
+    for chunk in ordered {
+        if chunk.translated.trim().is_empty() {
+            continue;
+        }
+        if let Some(updated) = replace_nth_occurrence(
+            &rendered,
+            &chunk.original,
+            &chunk.translated,
+            chunk.chunk_index,
+        ) {
+            rendered = updated;
+        }
+    }
+
+    rendered
 }
 
 pub fn parse_epub(input: &Path) -> Result<Vec<EpubEntry>> {
@@ -146,4 +192,34 @@ fn find_first_block_tag(original_html: &str) -> Option<(usize, usize)> {
         let end = original_html.rfind('<').unwrap_or(original_html.len());
         (start + 1, end)
     })
+}
+
+fn replace_nth_occurrence(
+    haystack: &str,
+    needle: &str,
+    replacement: &str,
+    nth: usize,
+) -> Option<String> {
+    if needle.is_empty() {
+        return None;
+    }
+
+    let mut start_at = 0usize;
+    let mut occurrence = 0usize;
+    while let Some(relative) = haystack[start_at..].find(needle) {
+        let match_start = start_at + relative;
+        if occurrence == nth {
+            let mut output = String::with_capacity(
+                haystack.len().saturating_sub(needle.len()) + replacement.len(),
+            );
+            output.push_str(&haystack[..match_start]);
+            output.push_str(replacement);
+            output.push_str(&haystack[match_start + needle.len()..]);
+            return Some(output);
+        }
+        occurrence += 1;
+        start_at = match_start + needle.len();
+    }
+
+    None
 }

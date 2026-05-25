@@ -97,8 +97,16 @@ impl JobStore {
         self.root.join("logs")
     }
 
+    pub fn checkpoints_dir(&self) -> PathBuf {
+        self.root.join("checkpoints")
+    }
+
     pub fn log_path(&self, job_id: &str) -> PathBuf {
         self.logs_dir().join(format!("{job_id}.log"))
+    }
+
+    pub fn checkpoint_path(&self, job_id: &str) -> PathBuf {
+        self.checkpoints_dir().join(format!("{job_id}.sqlite3"))
     }
 
     pub fn path_for(&self, job_id: &str) -> PathBuf {
@@ -142,6 +150,11 @@ impl JobStore {
 
     pub fn ensure_log_dir(&self) -> Result<()> {
         fs::create_dir_all(self.logs_dir())?;
+        Ok(())
+    }
+
+    pub fn ensure_checkpoint_dir(&self) -> Result<()> {
+        fs::create_dir_all(self.checkpoints_dir())?;
         Ok(())
     }
 }

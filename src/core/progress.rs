@@ -40,6 +40,7 @@ pub enum ProgressEvent {
     Started {
         total_text_files: usize,
         total_chunks: usize,
+        completed_chunks: usize,
     },
     FileStarted {
         file_name: String,
@@ -54,6 +55,7 @@ pub enum ProgressEvent {
         error: String,
     },
     Completed,
+    Paused,
     Failed {
         error: String,
     },
@@ -92,7 +94,11 @@ impl TerminalProgressReporter {
 impl ProgressReporter for TerminalProgressReporter {
     fn on_event(&self, event: ProgressEvent) {
         match event {
-            ProgressEvent::Started { total_chunks, .. } => {
+            ProgressEvent::Started {
+                total_chunks,
+                completed_chunks,
+                ..
+            } => {
                 let bar = ProgressBar::new(total_chunks as u64);
                 let style = ProgressStyle::with_template(
                     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} chunks {msg}",
@@ -100,6 +106,7 @@ impl ProgressReporter for TerminalProgressReporter {
                 .unwrap_or_else(|_| ProgressStyle::default_bar())
                 .progress_chars("=>-");
                 bar.set_style(style);
+                bar.set_position(completed_chunks as u64);
                 if let Ok(mut guard) = self.bar.lock() {
                     *guard = Some(bar);
                 }
@@ -120,6 +127,9 @@ impl ProgressReporter for TerminalProgressReporter {
             }
             ProgressEvent::Completed => {
                 self.with_bar(|bar| bar.finish_with_message("completed"));
+            }
+            ProgressEvent::Paused => {
+                self.with_bar(|bar| bar.finish_with_message("paused"));
             }
             ProgressEvent::Failed { error } | ProgressEvent::ChunkFailed { error } => {
                 self.with_bar(|bar| bar.abandon_with_message(format!("failed: {error}")));
@@ -155,10 +165,12 @@ impl ProgressReporter for JobProgressReporter {
             ProgressEvent::Started {
                 total_text_files,
                 total_chunks,
+                completed_chunks,
             } => {
                 state.status = JobStatus::Running;
                 state.metrics.total_text_files = total_text_files;
                 state.metrics.total_chunks = total_chunks;
+                state.metrics.completed_chunks = completed_chunks;
             }
             ProgressEvent::FileStarted { file_name } => {
                 state.current_file = Some(file_name);
@@ -182,6 +194,9 @@ impl ProgressReporter for JobProgressReporter {
             }
             ProgressEvent::Completed => {
                 state.status = JobStatus::Completed;
+            }
+            ProgressEvent::Paused => {
+                state.status = JobStatus::Paused;
             }
             ProgressEvent::Failed { error } => {
                 state.status = JobStatus::Failed;

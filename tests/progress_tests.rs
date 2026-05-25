@@ -37,6 +37,7 @@ fn job_progress_reporter_persists_progress_events() {
     reporter.on_event(ProgressEvent::Started {
         total_text_files: 2,
         total_chunks: 5,
+        completed_chunks: 0,
     });
     reporter.on_event(ProgressEvent::FileStarted {
         file_name: "chapter.xhtml".to_string(),
@@ -61,4 +62,22 @@ fn job_progress_reporter_persists_progress_events() {
     assert_eq!(loaded.metrics.retry_count, 1);
     assert_eq!(loaded.metrics.total_tokens, 16);
     assert_eq!(loaded.current_file.as_deref(), Some("chapter.xhtml"));
+}
+
+#[test]
+fn paused_progress_event_persists_paused_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = JobStore::new(dir.path().to_path_buf());
+    let state = JobState::new(
+        "job-paused".to_string(),
+        PathBuf::from("input.epub"),
+        PathBuf::from("output.epub"),
+    );
+    store.save(&state).unwrap();
+    let reporter = JobProgressReporter::new(store.clone(), "job-paused".to_string());
+
+    reporter.on_event(ProgressEvent::Paused);
+
+    let loaded = store.load("job-paused").unwrap();
+    assert_eq!(loaded.status, JobStatus::Paused);
 }

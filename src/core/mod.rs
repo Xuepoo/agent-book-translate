@@ -2,4 +2,6 @@
 
 pub mod engine;
 pub mod parser;
+pub mod progress;
+pub mod qa;
 pub mod router;

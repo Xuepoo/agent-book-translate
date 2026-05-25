@@ -1,7 +1,9 @@
 //! SQLite ACID task recovery mechanism.
 
+use crate::agent::client::parse_translation_content;
 use crate::error::Result;
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,11 +90,16 @@ pub fn list_completed_chunks(conn: &Connection) -> Result<Vec<ChunkProgress>> {
     )?;
 
     let rows = stmt.query_map([], |row| {
+        let translated_text: Option<String> = row.get(3)?;
         Ok(ChunkProgress {
             chapter_id: row.get(0)?,
             chunk_index: row.get(1)?,
             original_text: row.get(2)?,
-            translated_text: row.get(3)?,
+            translated_text: translated_text
+                .as_deref()
+                .map(normalize_checkpoint_translation)
+                .transpose()
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
             state: row.get(4)?,
         })
     })?;
@@ -102,4 +109,16 @@ pub fn list_completed_chunks(conn: &Connection) -> Result<Vec<ChunkProgress>> {
         result.push(row?);
     }
     Ok(result)
+}
+
+pub fn completed_chunk_map(conn: &Connection) -> Result<HashMap<(String, i64), ChunkProgress>> {
+    let chunks = list_completed_chunks(conn)?;
+    Ok(chunks
+        .into_iter()
+        .map(|chunk| ((chunk.chapter_id.clone(), chunk.chunk_index), chunk))
+        .collect())
+}
+
+fn normalize_checkpoint_translation(raw: &str) -> Result<String> {
+    parse_translation_content(raw)
 }

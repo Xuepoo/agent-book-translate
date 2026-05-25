@@ -1,4 +1,4 @@
-use agent_book_translate::config::load_config_file;
+use agent_book_translate::config::{AppConfig, load_config_file};
 use std::fs;
 
 #[test]
@@ -35,4 +35,10 @@ fn missing_explicit_config_path_returns_error() {
     let config_path = dir.path().join("missing.toml");
     let error = load_config_file(&config_path).unwrap_err();
     assert!(error.to_string().contains("config file does not exist"));
+}
+
+#[test]
+fn missing_default_config_path_uses_defaults() {
+    let config = AppConfig::load_from_path(None).unwrap();
+    assert_eq!(config.default_model, "mimo-v2.5-pro");
 }

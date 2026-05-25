@@ -56,7 +56,7 @@ pub fn build_translation_prompt(ctx: &PromptContext) -> String {
     };
 
     format!(
-        "You are a master translator specializing in literary works.\n\n[Global Background Context]\n<book_summary>\n{}\n</book_summary>\n\n[Current POV & Tone Constraint]\n<pov_speaker>\n{}\n</pov_speaker>\n\n[Local Character & Term Glossary References]\n<glossary>\n{}\n</glossary>\n\n[Semantic Context Alignment]\n<previous_context>\n{}\n</previous_context>\n\n<target>\n{}\n</target>\n\n<next_context>\n{}\n</next_context>\n",
+        "You are a master translator specializing in literary works.\n\nReturn a single JSON object with exactly one key named `translation`.\nDo not include markdown, notes, status fields, or any other keys.\nThe value must be the Chinese translation of the target text.\n\n[Global Background Context]\n<book_summary>\n{}\n</book_summary>\n\n[Current POV & Tone Constraint]\n<pov_speaker>\n{}\n</pov_speaker>\n\n[Local Character & Term Glossary References]\n<glossary>\n{}\n</glossary>\n\n[Semantic Context Alignment]\n<previous_context>\n{}\n</previous_context>\n\n<target>\n{}\n</target>\n\n<next_context>\n{}\n</next_context>\n",
         ctx.book_summary,
         ctx.pov_speaker,
         glossary,

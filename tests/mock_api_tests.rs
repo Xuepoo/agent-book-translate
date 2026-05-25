@@ -258,3 +258,35 @@ async fn token_usage_accumulates_across_requests() {
     assert_eq!(total.completion_tokens, 15);
     assert_eq!(total.total_tokens, 45);
 }
+
+/// A response that returns syntactically valid JSON but is missing the expected
+/// translation fields triggers a retry, and succeeding on retry returns the correct text.
+#[tokio::test]
+async fn test_retry_on_invalid_json_format_succeeds() {
+    let server = MockServer::start().await;
+    let bad_body = make_openai_response(r#"{"status": 500}"#);
+    let good_body = make_openai_response(r#"{"translation": "成功重试译文"}"#);
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&bad_body))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&good_body))
+        .mount(&server)
+        .await;
+
+    let config = make_config_for(&server.uri());
+    let client = TranslationClient::new(config);
+    let result = client
+        .translate_with_stats(&make_ctx("retry test format"))
+        .await
+        .unwrap();
+
+    assert_eq!(result.translation, "成功重试译文");
+    assert_eq!(result.retries, 1);
+}

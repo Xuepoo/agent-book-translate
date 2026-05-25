@@ -2,9 +2,14 @@
 name = "agent-book-translate"
 version = "0.1.0"
 edition = "2024"
-description = "A lightweight, agent-driven CLI ebook translator powered by LLM APIs"
-license = "MIT"
+rust-version = "1.85.0"
+authors = ["Xuepoo Foter <foter@example.com>"]
+description = "A powerful LLM-driven agentic EPUB book translator with robust progress monitoring and recovery"
 repository = "https://github.com/Xuepoo/agent-book-translate"
+license = "MIT"
+readme = "README.md"
+keywords = ["epub", "translation", "agentic", "llm", "openai"]
+categories = ["command-line-utilities", "text-processing"]
 
 [dependencies]
 # Async runtime

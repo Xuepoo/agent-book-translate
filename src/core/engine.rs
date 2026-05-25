@@ -1,6 +1,7 @@
 //! Tokio-driven translation workflow controller.
 
 use crate::agent::client::TranslationClient;
+use crate::agent::client::parse_translation_content;
 use crate::agent::prompt::PromptContext;
 use crate::config::AppConfig;
 use crate::core::parser::{
@@ -60,6 +61,8 @@ pub async fn run_with_progress_and_control(
     let mut checkpoint_conn = None;
     let mut completed_map = HashMap::new();
     let mut completed_chunks = 0usize;
+    let mut completed_text_files_from_checkpoint = 0usize;
+    let mut heartbeat_counter = 0u32;
     if let Some(control) = job_control.as_ref() {
         control.store.ensure_checkpoint_dir()?;
         let state = control.store.load(&control.job_id)?;
@@ -70,10 +73,29 @@ pub async fn run_with_progress_and_control(
         checkpoint_conn = Some(conn);
     }
 
+    // Count how many text files are fully covered by the checkpoint.  We
+    // compare each file's chunk count to the number of completed rows for that
+    // chapter so that partially checkpointed files are not over-counted.
+    for entry in text_entries.iter() {
+        let raw_html = String::from_utf8_lossy(&entry.data).to_string();
+        let doc = Html::parse_document(&raw_html);
+        let chunk_count = extract_text_chunks(&doc).len();
+        if chunk_count == 0 {
+            // No translatable content; skip from count.
+            continue;
+        }
+        let done = (0..chunk_count as i64)
+            .all(|idx| completed_map.contains_key(&(entry.name.clone(), idx)));
+        if done {
+            completed_text_files_from_checkpoint += 1;
+        }
+    }
+
     reporter.on_event(ProgressEvent::Started {
         total_text_files: text_entries.len(),
         total_chunks,
         completed_chunks,
+        completed_text_files: completed_text_files_from_checkpoint,
     });
 
     for entry in text_entries {
@@ -87,6 +109,7 @@ pub async fn run_with_progress_and_control(
             .map(|chunk| chunk.with_source_path(entry.name.clone()))
             .collect::<Vec<_>>();
         let mut rendered_chunks = Vec::new();
+        let mut new_chunks_translated: usize = 0;
 
         for (chunk_index, chunk) in chunks.iter().enumerate() {
             if let Some(control) = job_control.as_ref()
@@ -133,13 +156,19 @@ pub async fn run_with_progress_and_control(
                         usage: result.usage,
                         retries: result.retries,
                     });
+                    // Normalize translation before persisting to eliminate any
+                    // residual JSON wrapper that survived the client-side parse.
+                    // This is the definitive write point; reads normalize again
+                    // as a second-pass safety net.
+                    let normalized = parse_translation_content(&result.translation)
+                        .unwrap_or(result.translation);
                     if let Some(conn) = checkpoint_conn.as_ref() {
                         upsert_chunk_progress(
                             conn,
                             &entry.name,
                             chunk_index as i64,
                             &chunk.text,
-                            Some(&result.translation),
+                            Some(&normalized),
                             "completed",
                         )?;
                     }
@@ -149,7 +178,7 @@ pub async fn run_with_progress_and_control(
                             chapter_id: entry.name.clone(),
                             chunk_index: chunk_index as i64,
                             original_text: chunk.text.clone(),
-                            translated_text: Some(result.translation.clone()),
+                            translated_text: Some(normalized.clone()),
                             state: "completed".to_string(),
                         },
                     );
@@ -157,9 +186,21 @@ pub async fn run_with_progress_and_control(
                         file_name: entry.name.clone(),
                         chunk_index,
                         original: chunk.text.clone(),
-                        translated: result.translation,
+                        translated: normalized,
                     });
+                    new_chunks_translated += 1;
                     reporter.on_event(ProgressEvent::ChunkFinished);
+
+                    // Write a heartbeat every 30 completed chunks so that
+                    // stale-running detection sees a recent timestamp.
+                    heartbeat_counter += 1;
+                    if heartbeat_counter.is_multiple_of(30)
+                        && let Some(control) = job_control.as_ref()
+                        && let Ok(mut state) = control.store.load(&control.job_id)
+                    {
+                        state.update_heartbeat();
+                        let _ = control.store.save(&state);
+                    }
                 }
                 Err(error) => {
                     if let Some(conn) = checkpoint_conn.as_ref() {
@@ -185,7 +226,13 @@ pub async fn run_with_progress_and_control(
 
         let rendered = render_file_from_chunks(&raw_html, &rendered_chunks);
         rendered_files.insert(entry.name.clone(), rendered);
-        reporter.on_event(ProgressEvent::FileFinished);
+        // Only emit FileFinished when at least one new chunk was translated in
+        // this run.  Files restored entirely from checkpoint are already
+        // counted in `completed_text_files_from_checkpoint` passed via the
+        // Started event, so emitting FileFinished again would double-count.
+        if new_chunks_translated > 0 {
+            reporter.on_event(ProgressEvent::FileFinished);
+        }
     }
 
     match write_epub(output, &source_files, &rendered_files) {

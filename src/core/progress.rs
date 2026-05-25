@@ -41,6 +41,7 @@ pub enum ProgressEvent {
         total_text_files: usize,
         total_chunks: usize,
         completed_chunks: usize,
+        completed_text_files: usize,
     },
     FileStarted {
         file_name: String,
@@ -166,11 +167,13 @@ impl ProgressReporter for JobProgressReporter {
                 total_text_files,
                 total_chunks,
                 completed_chunks,
+                completed_text_files,
             } => {
                 state.status = JobStatus::Running;
                 state.metrics.total_text_files = total_text_files;
                 state.metrics.total_chunks = total_chunks;
                 state.metrics.completed_chunks = completed_chunks;
+                state.metrics.completed_text_files = completed_text_files;
             }
             ProgressEvent::FileStarted { file_name } => {
                 state.current_file = Some(file_name);

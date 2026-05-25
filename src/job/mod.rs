@@ -36,6 +36,10 @@ pub struct JobMetrics {
     pub total_tokens: u64,
 }
 
+/// After this many seconds without a heartbeat update, a Running job is
+/// considered stale (process died or machine was shut down).
+pub const STALE_THRESHOLD_SECS: i64 = 120;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobState {
     pub job_id: String,
@@ -46,6 +50,10 @@ pub struct JobState {
     pub last_error: Option<String>,
     pub started_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Periodically updated by the running translation process. Used to detect
+    /// stale Running jobs after a crash or power loss.
+    #[serde(default)]
+    pub last_heartbeat_at: Option<DateTime<Utc>>,
     pub metrics: JobMetrics,
 }
 
@@ -61,12 +69,35 @@ impl JobState {
             last_error: None,
             started_at: now,
             updated_at: now,
+            last_heartbeat_at: None,
             metrics: JobMetrics::default(),
         }
     }
 
     pub fn touch(&mut self) {
         self.updated_at = Utc::now();
+    }
+
+    pub fn update_heartbeat(&mut self) {
+        self.last_heartbeat_at = Some(Utc::now());
+    }
+
+    /// Returns true when the job status is Running but the last heartbeat is
+    /// older than `STALE_THRESHOLD_SECS`, indicating the process is no longer
+    /// alive.
+    pub fn is_stale_running(&self) -> bool {
+        if self.status != JobStatus::Running {
+            return false;
+        }
+        match self.last_heartbeat_at {
+            Some(ts) => {
+                let age = (Utc::now() - ts).num_seconds();
+                age > STALE_THRESHOLD_SECS
+            }
+            // No heartbeat ever written means the job was started before
+            // heartbeat support was added; treat it as stale.
+            None => true,
+        }
     }
 
     pub fn elapsed_seconds(&self) -> i64 {

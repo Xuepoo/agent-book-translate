@@ -3,8 +3,9 @@ use clap::{Args, Parser, Subcommand};
 use agent_book_translate::config::AppConfig;
 use agent_book_translate::core::engine::{JobControl, run_with_progress_and_control};
 use agent_book_translate::core::progress::{JobProgressReporter, TerminalProgressReporter};
+use agent_book_translate::core::qa::run_epub_qa;
 use agent_book_translate::error::{AppError, Result};
-use agent_book_translate::job::control::{request_pause, request_resume};
+use agent_book_translate::job::control::{request_pause, request_resume, request_resume_force};
 use agent_book_translate::job::{JobState, JobStatus, JobStore};
 use std::env;
 use std::fs::{File, OpenOptions};
@@ -31,6 +32,8 @@ enum CommandKind {
     Status(JobIdArgs),
     List,
     Logs(JobIdArgs),
+    /// Run quality assurance checks on a generated EPUB file.
+    Qa(QaArgs),
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -106,6 +109,11 @@ struct ResumeArgs {
 
     #[arg(long)]
     max_spend_usd: Option<f64>,
+
+    /// Force resume even if the job appears to be Running. Use after a crash
+    /// or power loss where the process is known to be dead.
+    #[arg(long, default_value_t = false)]
+    force: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -155,6 +163,12 @@ struct JobIdArgs {
     job_id: String,
 }
 
+#[derive(Args, Debug)]
+struct QaArgs {
+    /// Path to the EPUB file to inspect.
+    epub: PathBuf,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -166,6 +180,7 @@ async fn main() -> Result<()> {
         Some(CommandKind::Status(args)) => status(&args.job_id),
         Some(CommandKind::List) => list_jobs(),
         Some(CommandKind::Logs(args)) => logs(&args.job_id),
+        Some(CommandKind::Qa(args)) => run_qa(args),
         None => translate(cli.translate).await,
     }
 }
@@ -228,7 +243,11 @@ fn pause(args: JobIdArgs) -> Result<()> {
 
 fn resume(args: ResumeArgs) -> Result<()> {
     let store = JobStore::xdg()?;
-    let state = request_resume(&store, &args.job_id)?;
+    let state = if args.force {
+        request_resume_force(&store, &args.job_id)?
+    } else {
+        request_resume(&store, &args.job_id)?
+    };
     let options = LaunchOptions::from(&args);
     spawn_background_translate(
         &store,
@@ -445,5 +464,14 @@ impl agent_book_translate::core::progress::ProgressReporter for CombinedReporter
     fn on_event(&self, event: agent_book_translate::core::progress::ProgressEvent) {
         self.terminal.on_event(event.clone());
         self.job.on_event(event);
+    }
+}
+fn run_qa(args: QaArgs) -> Result<()> {
+    let report = run_epub_qa(&args.epub)?;
+    report.print_summary();
+    if report.passed() {
+        Ok(())
+    } else {
+        Err(AppError::Config("EPUB QA checks failed".to_string()))
     }
 }

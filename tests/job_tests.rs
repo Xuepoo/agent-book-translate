@@ -1,4 +1,7 @@
-use agent_book_translate::job::{JobMetrics, JobState, JobStatus, JobStore};
+use agent_book_translate::job::{
+    JobMetrics, JobState, JobStatus, JobStore,
+    control::{request_pause, request_resume},
+};
 use std::fs;
 
 #[test]
@@ -59,6 +62,42 @@ fn paused_state_round_trip_persists() {
         entries[0].path().file_name().and_then(|name| name.to_str()),
         Some("job-paused.json")
     );
+}
+
+#[test]
+fn pause_running_job_sets_pausing() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = JobStore::new(dir.path().to_path_buf());
+    let mut state = JobState::new(
+        "job-running".to_string(),
+        "input.epub".into(),
+        "output.epub".into(),
+    );
+    state.status = JobStatus::Running;
+    store.save(&state).unwrap();
+
+    let updated = request_pause(&store, "job-running").unwrap();
+
+    assert_eq!(updated.status, JobStatus::Pausing);
+    assert_eq!(
+        updated.last_error.as_deref(),
+        Some("pause requested by user")
+    );
+}
+
+#[test]
+fn resume_rejects_completed_job() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = JobStore::new(dir.path().to_path_buf());
+    let mut state = JobState::new(
+        "job-done".to_string(),
+        "input.epub".into(),
+        "output.epub".into(),
+    );
+    state.status = JobStatus::Completed;
+    store.save(&state).unwrap();
+
+    assert!(request_resume(&store, "job-done").is_err());
 }
 
 #[test]

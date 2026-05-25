@@ -1,9 +1,10 @@
 use clap::{Args, Parser, Subcommand};
 
 use agent_book_translate::config::AppConfig;
-use agent_book_translate::core::engine::run_with_progress;
+use agent_book_translate::core::engine::{JobControl, run_with_progress_and_control};
 use agent_book_translate::core::progress::{JobProgressReporter, TerminalProgressReporter};
 use agent_book_translate::error::{AppError, Result};
+use agent_book_translate::job::control::{request_pause, request_resume};
 use agent_book_translate::job::{JobState, JobStatus, JobStore};
 use std::env;
 use std::fs::{File, OpenOptions};
@@ -25,6 +26,8 @@ struct Cli {
 enum CommandKind {
     Translate(TranslateArgs),
     Start(TranslateArgs),
+    Pause(JobIdArgs),
+    Resume(ResumeArgs),
     Status(JobIdArgs),
     List,
     Logs(JobIdArgs),
@@ -75,6 +78,78 @@ struct TranslateArgs {
     max_spend_usd: Option<f64>,
 }
 
+#[derive(Args, Debug, Clone, Default)]
+struct ResumeArgs {
+    #[arg(long)]
+    job_id: String,
+
+    #[arg(long)]
+    config: Option<PathBuf>,
+
+    #[arg(short = 'k', long)]
+    api_key: Option<String>,
+
+    #[arg(short = 'u', long)]
+    base_url: Option<String>,
+
+    #[arg(short = 'm', long)]
+    model: Option<String>,
+
+    #[arg(short = 'c', long)]
+    concurrency: Option<usize>,
+
+    #[arg(long, default_value_t = false)]
+    bilingual: bool,
+
+    #[arg(short = 'v', long, default_value_t = false)]
+    verbose: bool,
+
+    #[arg(long)]
+    max_spend_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct LaunchOptions {
+    config: Option<PathBuf>,
+    api_key: Option<String>,
+    base_url: Option<String>,
+    model: Option<String>,
+    concurrency: Option<usize>,
+    bilingual: bool,
+    verbose: bool,
+    max_spend_usd: Option<f64>,
+}
+
+impl From<&TranslateArgs> for LaunchOptions {
+    fn from(value: &TranslateArgs) -> Self {
+        Self {
+            config: value.config.clone(),
+            api_key: value.api_key.clone(),
+            base_url: value.base_url.clone(),
+            model: value.model.clone(),
+            concurrency: value.concurrency,
+            bilingual: value.bilingual,
+            verbose: value.verbose,
+            max_spend_usd: value.max_spend_usd,
+        }
+    }
+}
+
+impl From<&ResumeArgs> for LaunchOptions {
+    fn from(value: &ResumeArgs) -> Self {
+        Self {
+            config: value.config.clone(),
+            api_key: value.api_key.clone(),
+            base_url: value.base_url.clone(),
+            model: value.model.clone(),
+            concurrency: value.concurrency,
+            bilingual: value.bilingual,
+            verbose: value.verbose,
+            max_spend_usd: value.max_spend_usd,
+        }
+    }
+}
+
 #[derive(Args, Debug)]
 struct JobIdArgs {
     job_id: String,
@@ -86,6 +161,8 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(CommandKind::Translate(args)) => translate(args).await,
         Some(CommandKind::Start(args)) => start(args),
+        Some(CommandKind::Pause(args)) => pause(args),
+        Some(CommandKind::Resume(args)) => resume(args),
         Some(CommandKind::Status(args)) => status(&args.job_id),
         Some(CommandKind::List) => list_jobs(),
         Some(CommandKind::Logs(args)) => logs(&args.job_id),
@@ -101,15 +178,24 @@ async fn translate(args: TranslateArgs) -> Result<()> {
 
     let store = JobStore::xdg()?;
     let job_id = args.job_id.unwrap_or_else(|| Uuid::new_v4().to_string());
-    let state = JobState::new(job_id.clone(), input.to_path_buf(), output.to_path_buf());
-    store.save(&state)?;
+    let _state = load_or_create_job_state(&store, &job_id, input, output)?;
     println!("job_id: {job_id}");
 
     let terminal = TerminalProgressReporter::new();
     let job = JobProgressReporter::new(store.clone(), job_id.clone());
     let reporter = CombinedReporter { terminal, job };
 
-    let result = run_with_progress(input, output, &config, &reporter).await;
+    let result = run_with_progress_and_control(
+        input,
+        output,
+        &config,
+        &reporter,
+        Some(JobControl {
+            store: store.clone(),
+            job_id: job_id.clone(),
+        }),
+    )
+    .await;
     if let Err(error) = &result {
         let mut state = store.load(&job_id)?;
         state.status = JobStatus::Failed;
@@ -123,59 +209,34 @@ fn start(args: TranslateArgs) -> Result<()> {
     let input = required_path(args.input.as_deref(), "input")?;
     let output = required_path(args.output.as_deref(), "output")?;
     let store = JobStore::xdg()?;
-    store.ensure_log_dir()?;
     let job_id = args
         .job_id
         .clone()
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let state = JobState::new(job_id.clone(), input.to_path_buf(), output.to_path_buf());
     store.save(&state)?;
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(store.log_path(&job_id))?;
-    let err_log = log.try_clone()?;
+    spawn_background_translate(&store, &job_id, input, output, &LaunchOptions::from(&args))?;
+    Ok(())
+}
 
-    let exe = env::current_exe()?;
-    let mut command = Command::new(exe);
-    command
-        .arg("translate")
-        .arg("--job-id")
-        .arg(&job_id)
-        .arg("--input")
-        .arg(input)
-        .arg("--output")
-        .arg(output);
-    append_optional_path(&mut command, "--config", args.config.as_deref());
-    append_optional(&mut command, "--api-key", args.api_key.as_deref());
-    append_optional(&mut command, "--base-url", args.base_url.as_deref());
-    append_optional(&mut command, "--model", args.model.as_deref());
-    if let Some(concurrency) = args.concurrency {
-        command.arg("--concurrency").arg(concurrency.to_string());
-    }
-    if args.bilingual {
-        command.arg("--bilingual");
-    }
-    if args.verbose {
-        command.arg("--verbose");
-    }
-    if let Some(max_spend_usd) = args.max_spend_usd {
-        command
-            .arg("--max-spend-usd")
-            .arg(max_spend_usd.to_string());
-    }
+fn pause(args: JobIdArgs) -> Result<()> {
+    let store = JobStore::xdg()?;
+    let state = request_pause(&store, &args.job_id)?;
+    print_state(&state);
+    Ok(())
+}
 
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(log))
-        .stderr(Stdio::from(err_log));
-    if let Some(xdg_state_home) = env::var_os("XDG_STATE_HOME") {
-        command.env("XDG_STATE_HOME", xdg_state_home);
-    }
-    command.spawn()?;
-    println!("job_id: {job_id}");
-    println!("status: {}", store.path_for(&job_id).display());
-    println!("log: {}", store.log_path(&job_id).display());
+fn resume(args: ResumeArgs) -> Result<()> {
+    let store = JobStore::xdg()?;
+    let state = request_resume(&store, &args.job_id)?;
+    let options = LaunchOptions::from(&args);
+    spawn_background_translate(
+        &store,
+        &args.job_id,
+        state.input.as_path(),
+        state.output.as_path(),
+        &options,
+    )?;
     Ok(())
 }
 
@@ -242,6 +303,96 @@ fn apply_cli_overrides(config: &mut AppConfig, args: &TranslateArgs) {
     let _ = args.verbose;
     let _ = &args.series;
     let _ = args.resume;
+}
+
+fn load_or_create_job_state(
+    store: &JobStore,
+    job_id: &str,
+    input: &Path,
+    output: &Path,
+) -> Result<JobState> {
+    let path = store.path_for(job_id);
+    if path.exists() {
+        let state = store.load(job_id)?;
+        if state.input != input || state.output != output {
+            return Err(AppError::Config(format!(
+                "job state paths do not match requested paths: {job_id}"
+            )));
+        }
+        if state.status == JobStatus::Completed {
+            return Err(AppError::Config(format!("job already completed: {job_id}")));
+        }
+        return Ok(state);
+    }
+
+    let state = JobState::new(
+        job_id.to_string(),
+        input.to_path_buf(),
+        output.to_path_buf(),
+    );
+    store.save(&state)?;
+    Ok(state)
+}
+
+fn spawn_background_translate(
+    store: &JobStore,
+    job_id: &str,
+    input: &Path,
+    output: &Path,
+    options: &LaunchOptions,
+) -> Result<()> {
+    store.ensure_log_dir()?;
+    let log = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(store.log_path(job_id))?;
+    let err_log = log.try_clone()?;
+
+    let exe = env::current_exe()?;
+    let mut command = Command::new(exe);
+    command
+        .arg("translate")
+        .arg("--job-id")
+        .arg(job_id)
+        .arg("--input")
+        .arg(input)
+        .arg("--output")
+        .arg(output);
+    append_launch_options(&mut command, options);
+
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log))
+        .stderr(Stdio::from(err_log));
+    if let Some(xdg_state_home) = env::var_os("XDG_STATE_HOME") {
+        command.env("XDG_STATE_HOME", xdg_state_home);
+    }
+    command.spawn()?;
+    println!("job_id: {job_id}");
+    println!("status: {}", store.path_for(job_id).display());
+    println!("log: {}", store.log_path(job_id).display());
+    Ok(())
+}
+
+fn append_launch_options(command: &mut Command, options: &LaunchOptions) {
+    append_optional_path(command, "--config", options.config.as_deref());
+    append_optional(command, "--api-key", options.api_key.as_deref());
+    append_optional(command, "--base-url", options.base_url.as_deref());
+    append_optional(command, "--model", options.model.as_deref());
+    if let Some(concurrency) = options.concurrency {
+        command.arg("--concurrency").arg(concurrency.to_string());
+    }
+    if options.bilingual {
+        command.arg("--bilingual");
+    }
+    if options.verbose {
+        command.arg("--verbose");
+    }
+    if let Some(max_spend_usd) = options.max_spend_usd {
+        command
+            .arg("--max-spend-usd")
+            .arg(max_spend_usd.to_string());
+    }
 }
 
 fn append_optional(command: &mut Command, flag: &str, value: Option<&str>) {

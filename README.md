@@ -72,6 +72,8 @@ agent-book-translate start \
 The command prints a `job_id`. Use it to inspect progress:
 
 ```bash
+agent-book-translate pause <job_id>
+agent-book-translate resume <job_id>
 agent-book-translate status <job_id>
 agent-book-translate logs <job_id>
 agent-book-translate list
@@ -84,8 +86,13 @@ $XDG_STATE_HOME/agent-book-translate/
 ```
 
 State files include progress, elapsed time, request count, retry count, and
-token usage returned by the API provider. They do not store API keys or full
+token usage returned by the API provider. Checkpoints are stored in
+`$XDG_STATE_HOME/agent-book-translate/checkpoints/` so paused or interrupted
+jobs can continue from completed chunks. They do not store API keys or full
 provider configuration.
+
+`pause` requests a cooperative stop after the current chunk finishes.
+`resume` restarts the same `job_id` from checkpoints after a pause or failure.
 
 ## CI and release
 

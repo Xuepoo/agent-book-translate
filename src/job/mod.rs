@@ -1,5 +1,7 @@
 //! Job state persistence for foreground and background translation runs.
 
+pub mod control;
+
 use crate::error::{AppError, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

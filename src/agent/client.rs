@@ -138,9 +138,9 @@ pub fn parse_translation_content(raw: &str) -> Result<String> {
     let value = match serde_json::from_str::<serde_json::Value>(trimmed) {
         Ok(value) => value,
         Err(_) => {
-            return Ok(unwrap_malformed_translation_object(trimmed)
-                .unwrap_or(trimmed)
-                .to_string());
+            return Ok(
+                unwrap_malformed_translation_object(trimmed).unwrap_or_else(|| trimmed.to_string())
+            );
         }
     };
 
@@ -193,16 +193,36 @@ fn strip_markdown_fence(raw: &str) -> &str {
     }
 }
 
-fn unwrap_malformed_translation_object(raw: &str) -> Option<&str> {
+fn unwrap_malformed_translation_object(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let inner = raw.strip_prefix('{')?.strip_suffix('}')?.trim();
     for key in ["translation", "refined_translation", "translated_text"] {
-        let prefix = format!("{{\"{key}\": \"");
-        if let Some(value) = raw
-            .strip_prefix(&prefix)
-            .and_then(|value| value.strip_suffix("\"}"))
+        let Some(value) = strip_malformed_field(inner, key) else {
+            continue;
+        };
+        return Some(value.to_string());
+    }
+    None
+}
+
+fn strip_malformed_field<'a>(field: &'a str, key: &str) -> Option<&'a str> {
+    let remainder = field
+        .strip_prefix('"')?
+        .strip_prefix(key)?
+        .strip_prefix('"')?
+        .trim_start()
+        .strip_prefix(':')?
+        .trim_start();
+
+    for (open, close) in [('"', '"'), ('“', '”')] {
+        if let Some(value) = remainder
+            .strip_prefix(open)
+            .and_then(|value| value.strip_suffix(close))
         {
             return Some(value);
         }
     }
+
     None
 }
 

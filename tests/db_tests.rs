@@ -52,6 +52,29 @@ fn checkpoint_completed_chunk_is_reused() {
 }
 
 #[test]
+fn checkpoint_completed_chunk_normalizes_malformed_translation_wrapper() {
+    let conn = Connection::open_in_memory().unwrap();
+    init_checkpoint_schema(&conn).unwrap();
+    upsert_chunk_progress(
+        &conn,
+        "ch_3",
+        5,
+        "original text",
+        Some(r#"{"translation":"时间在流逝，"怎么着，"他喃喃道。"}"#),
+        "completed",
+    )
+    .unwrap();
+
+    let completed = completed_chunk_map(&conn).unwrap();
+    let row = completed.get(&("ch_3".to_string(), 5)).unwrap();
+
+    assert_eq!(
+        row.translated_text.as_deref(),
+        Some("时间在流逝，\"怎么着，\"他喃喃道。")
+    );
+}
+
+#[test]
 fn fts5_entity_matching() {
     let conn = Connection::open_in_memory().unwrap();
     init_series_schema(&conn).unwrap();

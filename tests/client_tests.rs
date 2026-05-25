@@ -35,3 +35,21 @@ fn malformed_translation_wrapper_is_unwrapped() {
 
     assert_eq!(translation, "他说：\"你好。\"");
 }
+
+#[test]
+fn malformed_translation_wrapper_without_space_is_unwrapped() {
+    let raw = r#"{"translation":"时间在流逝，"怎么着，"他喃喃道。"}"#;
+
+    let translation = parse_translation_content(raw).unwrap();
+
+    assert_eq!(translation, "时间在流逝，\"怎么着，\"他喃喃道。");
+}
+
+#[test]
+fn malformed_translation_wrapper_with_smart_quote_is_unwrapped() {
+    let raw = r#"{"translation":“我想是的，先生。”}"#;
+
+    let translation = parse_translation_content(raw).unwrap();
+
+    assert_eq!(translation, "我想是的，先生。");
+}

@@ -55,14 +55,47 @@ impl TranslationClient {
             "response_format": {"type": "json_object"}
         });
 
-        let response = self.post_with_retry(body).await?;
-        let content = extract_content(&response.text).unwrap_or(response.text.clone());
-        let translation = parse_translation_content(&content)?;
-        Ok(TranslationResult {
-            translation,
-            usage: TokenUsage::from_response(&response.text).unwrap_or_default(),
-            retries: response.retries,
-        })
+        let mut delay = Duration::from_secs(1);
+        let max_parse_attempts = 3usize;
+        let mut total_retries = 0;
+
+        for attempt in 1..=max_parse_attempts {
+            match self.post_with_retry(body.clone()).await {
+                Ok(response) => {
+                    total_retries += response.retries;
+                    let content = extract_content(&response.text).unwrap_or(response.text.clone());
+                    let usage = TokenUsage::from_response(&response.text).unwrap_or_default();
+                    
+                    match parse_translation_content(&content) {
+                        Ok(translation) => {
+                            // Check for leaked JSON wrappers inside the parsed string as secondary validation
+                            let leaks = ["{\"translation\"", "{\"role\"", "refined_translation", "incorrect_terms"];
+                            let has_leak = leaks.iter().any(|pattern| translation.contains(pattern));
+                            if !has_leak {
+                                return Ok(TranslationResult {
+                                    translation,
+                                    usage,
+                                    retries: total_retries + (attempt - 1) as u64,
+                                });
+                            }
+                        }
+                        Err(_) => {}
+                    }
+                }
+                Err(e) => {
+                    if attempt == max_parse_attempts {
+                        return Err(e);
+                    }
+                }
+            }
+
+            if attempt < max_parse_attempts {
+                sleep(delay).await;
+                delay *= 2;
+            }
+        }
+
+        Err(AppError::Translation("translation parsing and validation exhausted".to_string()))
     }
 
     async fn post_with_retry(&self, body: serde_json::Value) -> Result<TranslationResponse> {

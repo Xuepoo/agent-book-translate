@@ -65,21 +65,23 @@ impl TranslationClient {
                     total_retries += response.retries;
                     let content = extract_content(&response.text).unwrap_or(response.text.clone());
                     let usage = TokenUsage::from_response(&response.text).unwrap_or_default();
-                    
-                    match parse_translation_content(&content) {
-                        Ok(translation) => {
-                            // Check for leaked JSON wrappers inside the parsed string as secondary validation
-                            let leaks = ["{\"translation\"", "{\"role\"", "refined_translation", "incorrect_terms"];
-                            let has_leak = leaks.iter().any(|pattern| translation.contains(pattern));
-                            if !has_leak {
-                                return Ok(TranslationResult {
-                                    translation,
-                                    usage,
-                                    retries: total_retries + (attempt - 1) as u64,
-                                });
-                            }
+
+                    if let Ok(translation) = parse_translation_content(&content) {
+                        // Check for leaked JSON wrappers inside the parsed string as secondary validation
+                        let leaks = [
+                            "{\"translation\"",
+                            "{\"role\"",
+                            "refined_translation",
+                            "incorrect_terms",
+                        ];
+                        let has_leak = leaks.iter().any(|pattern| translation.contains(pattern));
+                        if !has_leak {
+                            return Ok(TranslationResult {
+                                translation,
+                                usage,
+                                retries: total_retries + (attempt - 1) as u64,
+                            });
                         }
-                        Err(_) => {}
                     }
                 }
                 Err(e) => {
@@ -95,7 +97,9 @@ impl TranslationClient {
             }
         }
 
-        Err(AppError::Translation("translation parsing and validation exhausted".to_string()))
+        Err(AppError::Translation(
+            "translation parsing and validation exhausted".to_string(),
+        ))
     }
 
     async fn post_with_retry(&self, body: serde_json::Value) -> Result<TranslationResponse> {

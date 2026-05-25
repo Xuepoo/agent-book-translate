@@ -34,6 +34,8 @@ enum CommandKind {
     Logs(JobIdArgs),
     /// Run quality assurance checks on a generated EPUB file.
     Qa(QaArgs),
+    /// Batch normalize and repair a checkpoint database containing lingering JSON wrappers.
+    MigrateCheckpoint(MigrateCheckpointArgs),
 }
 
 #[derive(Args, Debug, Clone, Default)]
@@ -169,6 +171,12 @@ struct QaArgs {
     epub: PathBuf,
 }
 
+#[derive(Args, Debug)]
+struct MigrateCheckpointArgs {
+    /// Path to the SQLite checkpoint database.
+    database: PathBuf,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -181,6 +189,7 @@ async fn main() -> Result<()> {
         Some(CommandKind::List) => list_jobs(),
         Some(CommandKind::Logs(args)) => logs(&args.job_id),
         Some(CommandKind::Qa(args)) => run_qa(args),
+        Some(CommandKind::MigrateCheckpoint(args)) => run_migration(args),
         None => translate(cli.translate).await,
     }
 }
@@ -473,5 +482,25 @@ fn run_qa(args: QaArgs) -> Result<()> {
         Ok(())
     } else {
         Err(AppError::Config("EPUB QA checks failed".to_string()))
+    }
+}
+
+fn run_migration(args: MigrateCheckpointArgs) -> Result<()> {
+    println!(
+        "Starting migration scan on database: {}",
+        args.database.display()
+    );
+    match agent_book_translate::core::migration::migrate_checkpoint_db(&args.database) {
+        Ok(res) => {
+            println!(
+                "Migration complete! Scanned: {} completed chunks, Repaired: {} chunks.",
+                res.scanned, res.repaired
+            );
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("Error executing migration: {}", err);
+            Err(err)
+        }
     }
 }

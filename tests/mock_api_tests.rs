@@ -290,4 +290,3 @@ async fn test_retry_on_invalid_json_format_succeeds() {
     assert_eq!(result.translation, "成功重试译文");
     assert_eq!(result.retries, 1);
 }
-

@@ -5,13 +5,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use tempfile::NamedTempFile;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     Pending,
     Running,
+    Pausing,
+    Paused,
     Completed,
     Failed,
 }
@@ -106,8 +110,7 @@ impl JobStore {
         let mut state = state.clone();
         state.touch();
         let raw = serde_json::to_vec_pretty(&state)?;
-        fs::write(self.path_for(&state.job_id), raw)?;
-        Ok(())
+        write_atomic(&self.path_for(&state.job_id), &raw)
     }
 
     pub fn load(&self, job_id: &str) -> Result<JobState> {
@@ -146,4 +149,16 @@ impl JobStore {
 fn read_state_file(path: &Path) -> Result<JobState> {
     let raw = fs::read_to_string(path)?;
     serde_json::from_str(&raw).map_err(AppError::from)
+}
+
+fn write_atomic(path: &Path, raw: &[u8]) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| AppError::Config(format!("invalid job state path: {}", path.display())))?;
+    let mut tmp = NamedTempFile::new_in(parent)?;
+    tmp.write_all(raw)?;
+    tmp.flush()?;
+    tmp.persist(path)
+        .map(|_| ())
+        .map_err(|err| err.error.into())
 }

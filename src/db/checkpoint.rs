@@ -2,6 +2,7 @@
 
 use crate::error::Result;
 use rusqlite::{Connection, params};
+use std::collections::HashMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,4 +103,12 @@ pub fn list_completed_chunks(conn: &Connection) -> Result<Vec<ChunkProgress>> {
         result.push(row?);
     }
     Ok(result)
+}
+
+pub fn completed_chunk_map(conn: &Connection) -> Result<HashMap<(String, i64), ChunkProgress>> {
+    let chunks = list_completed_chunks(conn)?;
+    Ok(chunks
+        .into_iter()
+        .map(|chunk| ((chunk.chapter_id.clone(), chunk.chunk_index), chunk))
+        .collect())
 }

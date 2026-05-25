@@ -66,15 +66,18 @@ impl AppConfig {
 
     pub fn load_from_path(path: Option<&Path>) -> Result<Self> {
         let mut config = Self::default();
-        if let Some(path) = path.map(Path::to_path_buf).or_else(config_path) {
-            if path.exists() {
-                config = config.merge(load_file_config(&path)?);
-            } else if path.is_absolute() || path.parent().is_some() {
+        if let Some(path) = path {
+            if !path.exists() {
                 return Err(AppError::Config(format!(
                     "config file does not exist: {}",
                     path.display()
                 )));
             }
+            config = config.merge(load_file_config(path)?);
+        } else if let Some(path) = config_path()
+            && path.exists()
+        {
+            config = config.merge(load_file_config(&path)?);
         }
 
         config.apply_environment_overrides();

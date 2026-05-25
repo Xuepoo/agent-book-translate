@@ -137,7 +137,11 @@ pub fn parse_translation_content(raw: &str) -> Result<String> {
     let trimmed = strip_markdown_fence(raw);
     let value = match serde_json::from_str::<serde_json::Value>(trimmed) {
         Ok(value) => value,
-        Err(_) => return Ok(trimmed.to_string()),
+        Err(_) => {
+            return Ok(unwrap_malformed_translation_object(trimmed)
+                .unwrap_or(trimmed)
+                .to_string());
+        }
     };
 
     translation_from_json_value(&value)
@@ -187,6 +191,19 @@ fn strip_markdown_fence(raw: &str) -> &str {
     } else {
         trimmed
     }
+}
+
+fn unwrap_malformed_translation_object(raw: &str) -> Option<&str> {
+    for key in ["translation", "refined_translation", "translated_text"] {
+        let prefix = format!("{{\"{key}\": \"");
+        if let Some(value) = raw
+            .strip_prefix(&prefix)
+            .and_then(|value| value.strip_suffix("\"}"))
+        {
+            return Some(value);
+        }
+    }
+    None
 }
 
 fn pick_translation_candidate(

@@ -26,3 +26,12 @@ fn message_field_is_used_as_translation_fallback() {
 
     assert_eq!(translation, "你好世界");
 }
+
+#[test]
+fn malformed_translation_wrapper_is_unwrapped() {
+    let raw = r#"{"translation": "他说："你好。""}"#;
+
+    let translation = parse_translation_content(raw).unwrap();
+
+    assert_eq!(translation, "他说：\"你好。\"");
+}

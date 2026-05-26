@@ -1,0 +1,13 @@
+name: "agent-book-translate"
+arch: "amd64"
+platform: "linux"
+version: "0.1.0"
+section: "utils"
+priority: "optional"
+maintainer: "Xuepoo Foter <foter@example.com>"
+description: "A powerful LLM-driven agentic EPUB book translator with robust progress monitoring and recovery"
+homepage: "https://github.com/Xuepoo/agent-book-translate"
+license: "MIT"
+contents:
+  - src: "./target/release/agent-book-translate"
+    dst: "/usr/bin/agent-book-translate"

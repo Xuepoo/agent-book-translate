@@ -1,0 +1,96 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact_name: agent-book-translate-linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            artifact_name: agent-book-translate-linux-aarch64
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            artifact_name: agent-book-translate-windows-x86_64.exe
+          - target: aarch64-pc-windows-msvc
+            runner: windows-latest
+            artifact_name: agent-book-translate-windows-aarch64.exe
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            artifact_name: agent-book-translate-macos-x86_64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            artifact_name: agent-book-translate-macos-aarch64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.85.0"
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          cargo build --release --locked --target "${{ matrix.target }}"
+          mkdir -p dist
+          binary="target/${{ matrix.target }}/release/agent-book-translate"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            binary="${binary}.exe"
+          fi
+          cp "${binary}" "dist/${{ matrix.artifact_name }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
+
+  publish:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          cat > release-notes.txt <<EOF
+          agent-book-translate ${GITHUB_REF_NAME}
+
+          Built artifacts:
+          - linux x86_64
+          - linux aarch64
+          - windows x86_64
+          - windows aarch64
+          - macOS x86_64
+          - macOS aarch64
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/**/*
+            release-notes.txt

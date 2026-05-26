@@ -1,0 +1,5 @@
+[toolchain]
+# Edition 2024 requires Rust 1.85.0+.
+# Use "stable" locally; CI pins to a specific version for reproducibility.
+channel = "stable"
+components = ["rustfmt", "clippy"]

@@ -40,7 +40,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.85.0"
-          targets: ${{ matrix.target }}
+          target: ${{ matrix.target }}
 
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2

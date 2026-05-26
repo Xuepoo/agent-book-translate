@@ -59,6 +59,24 @@ pub struct JobState {
     pub metrics: JobMetrics,
 }
 
+#[cfg(unix)]
+unsafe extern "C" {
+    fn kill(pid: i32, sig: i32) -> i32;
+}
+
+#[cfg(unix)]
+fn is_process_alive(pid: u32) -> bool {
+    unsafe {
+        let res = kill(pid as i32, 0);
+        if res == 0 {
+            true
+        } else {
+            // EPERM (1) means the process exists but we do not have permission to signal it.
+            std::io::Error::last_os_error().raw_os_error() == Some(1)
+        }
+    }
+}
+
 impl JobState {
     pub fn new(job_id: String, input: PathBuf, output: PathBuf) -> Self {
         let now = Utc::now();
@@ -86,20 +104,20 @@ impl JobState {
     }
 
     /// Returns true when the job status is Running but the process is no longer
-    /// alive. Leverages PID /proc checking on Linux, with heartbeat fallback.
+    /// alive. Leverages POSIX PID signal checking on Unix platforms, with heartbeat fallback.
     pub fn is_stale_running(&self) -> bool {
         if self.status != JobStatus::Running {
             return false;
         }
 
-        // 1. PID-based check (highly reliable on Linux)
+        // 1. PID-based check (highly reliable on Unix platforms like Linux/macOS)
+        #[cfg(unix)]
         if let Some(pid) = self.pid {
-            let pid_path = format!("/proc/{}", pid);
-            if !std::path::Path::new(&pid_path).exists() {
+            if !is_process_alive(pid) {
                 // Recorded process is definitely dead
                 return true;
             }
-            // If the pid directory exists, it's alive, so NOT stale.
+            // If the process is alive, it's NOT stale.
             return false;
         }
 

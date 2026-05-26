@@ -251,6 +251,7 @@ fn completed_text_files_never_exceeds_total() {
 }
 
 #[test]
+#[cfg(unix)]
 fn test_pid_stale_running_detection() {
     let mut state = JobState::new(
         "job-pid-test".to_string(),

@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,19 +12,25 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            os: ubuntu-latest
             artifact_name: agent-book-translate-linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            artifact_name: agent-book-translate-linux-aarch64
           - target: x86_64-pc-windows-msvc
-            runner: windows-latest
+            os: windows-latest
             artifact_name: agent-book-translate-windows-x86_64.exe
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact_name: agent-book-translate-macos-x86_64
           - target: aarch64-apple-darwin
-            runner: macos-latest
+            os: macos-14
             artifact_name: agent-book-translate-macos-aarch64
 
     steps:
@@ -48,12 +55,50 @@ jobs:
             binary="${binary}.exe"
           fi
           cp "${binary}" "dist/${{ matrix.artifact_name }}"
+          
+          # Also copy for nfpm packaging if on Linux
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            cp "${binary}" "./agent-book-translate"
+            chmod +x ./agent-book-translate
+          fi
+
+      - name: Package for Linux distributions
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # Determine CPU Architecture
+          ARCH_TYPE=$(uname -m)
+          if [ "$ARCH_TYPE" = "aarch64" ]; then
+            NFPM_ARCH="arm64"
+            ARCH="arm64"
+            PKG_ARCH="aarch64"
+          else
+            NFPM_ARCH="x86_64"
+            ARCH="amd64"
+            PKG_ARCH="x86_64"
+          fi
+          
+          # Download nFPM
+          curl -sL https://github.com/goreleaser/nfpm/releases/download/v2.37.1/nfpm_2.37.1_Linux_${NFPM_ARCH}.tar.gz | tar xz nfpm
+          
+          # Extract Version from Tag
+          VERSION=${GITHUB_REF#refs/tags/v}
+          if [[ "$VERSION" == refs/heads/* ]] || [[ "$VERSION" == refs/pull/* ]] || [ -z "$VERSION" ]; then
+            VERSION="0.1.0"
+          fi
+          
+          export VERSION
+          export ARCH
+          
+          # Generate Debian and RPM packages
+          ./nfpm pkg --packager deb --target dist/agent-book-translate-linux-${PKG_ARCH}.deb
+          ./nfpm pkg --packager rpm --target dist/agent-book-translate-linux-${PKG_ARCH}.rpm
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/${{ matrix.artifact_name }}
+          path: dist/*
 
   publish:
     name: Create GitHub Release
@@ -74,7 +119,6 @@ jobs:
           - linux x86_64
           - linux aarch64
           - windows x86_64
-          - windows aarch64
           - macOS x86_64
           - macOS aarch64
           EOF

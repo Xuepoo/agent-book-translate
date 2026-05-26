@@ -19,18 +19,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             artifact_name: agent-book-translate-linux-x86_64
-          - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-latest
-            artifact_name: agent-book-translate-linux-aarch64
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             artifact_name: agent-book-translate-windows-x86_64.exe
-          - target: aarch64-pc-windows-msvc
-            runner: windows-latest
-            artifact_name: agent-book-translate-windows-aarch64.exe
-          - target: x86_64-apple-darwin
-            runner: macos-latest
-            artifact_name: agent-book-translate-macos-x86_64
           - target: aarch64-apple-darwin
             runner: macos-latest
             artifact_name: agent-book-translate-macos-aarch64

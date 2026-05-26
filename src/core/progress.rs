@@ -170,6 +170,7 @@ impl ProgressReporter for JobProgressReporter {
                 completed_text_files,
             } => {
                 state.status = JobStatus::Running;
+                state.pid = Some(std::process::id());
                 state.metrics.total_text_files = total_text_files;
                 state.metrics.total_chunks = total_chunks;
                 state.metrics.completed_chunks = completed_chunks;
@@ -179,7 +180,10 @@ impl ProgressReporter for JobProgressReporter {
                 state.current_file = Some(file_name);
             }
             ProgressEvent::FileFinished => {
-                state.metrics.completed_text_files += 1;
+                state.metrics.completed_text_files = std::cmp::min(
+                    state.metrics.completed_text_files + 1,
+                    state.metrics.total_text_files,
+                );
             }
             ProgressEvent::RequestFinished { usage, retries } => {
                 state.metrics.request_count += 1;

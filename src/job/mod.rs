@@ -54,6 +54,8 @@ pub struct JobState {
     /// stale Running jobs after a crash or power loss.
     #[serde(default)]
     pub last_heartbeat_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub pid: Option<u32>,
     pub metrics: JobMetrics,
 }
 
@@ -70,6 +72,7 @@ impl JobState {
             started_at: now,
             updated_at: now,
             last_heartbeat_at: None,
+            pid: None,
             metrics: JobMetrics::default(),
         }
     }
@@ -82,20 +85,30 @@ impl JobState {
         self.last_heartbeat_at = Some(Utc::now());
     }
 
-    /// Returns true when the job status is Running but the last heartbeat is
-    /// older than `STALE_THRESHOLD_SECS`, indicating the process is no longer
-    /// alive.
+    /// Returns true when the job status is Running but the process is no longer
+    /// alive. Leverages PID /proc checking on Linux, with heartbeat fallback.
     pub fn is_stale_running(&self) -> bool {
         if self.status != JobStatus::Running {
             return false;
         }
+
+        // 1. PID-based check (highly reliable on Linux)
+        if let Some(pid) = self.pid {
+            let pid_path = format!("/proc/{}", pid);
+            if !std::path::Path::new(&pid_path).exists() {
+                // Recorded process is definitely dead
+                return true;
+            }
+            // If the pid directory exists, it's alive, so NOT stale.
+            return false;
+        }
+
+        // 2. Heartbeat-based fallback
         match self.last_heartbeat_at {
             Some(ts) => {
                 let age = (Utc::now() - ts).num_seconds();
                 age > STALE_THRESHOLD_SECS
             }
-            // No heartbeat ever written means the job was started before
-            // heartbeat support was added; treat it as stale.
             None => true,
         }
     }

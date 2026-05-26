@@ -249,3 +249,60 @@ fn completed_text_files_never_exceeds_total() {
         "completed_text_files must not exceed total_text_files"
     );
 }
+
+#[test]
+fn test_pid_stale_running_detection() {
+    let mut state = JobState::new(
+        "job-pid-test".to_string(),
+        PathBuf::from("input.epub"),
+        PathBuf::from("output.epub"),
+    );
+    state.status = JobStatus::Running;
+
+    // Case 1: PID is current process (definitely alive)
+    state.pid = Some(std::process::id());
+    // Heartbeat is old, but process is alive, so it must NOT be stale.
+    state.last_heartbeat_at = Some(Utc::now() - chrono::Duration::seconds(300));
+    assert!(
+        !state.is_stale_running(),
+        "Job must not be stale if its process is still alive"
+    );
+
+    // Case 2: PID is non-existent (dead process)
+    // Most OS limit PID to 32768 or 4194304, a very high PID is safe.
+    state.pid = Some(999999);
+    // Heartbeat is fresh, but process is dead, so it MUST be stale.
+    state.last_heartbeat_at = Some(Utc::now());
+    assert!(
+        state.is_stale_running(),
+        "Job must be stale if its process is dead"
+    );
+}
+
+#[test]
+fn test_completed_text_files_bounds_protection() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = JobStore::new(dir.path().to_path_buf());
+    let state = JobState::new(
+        "job-bounds-test".to_string(),
+        PathBuf::from("input.epub"),
+        PathBuf::from("output.epub"),
+    );
+    store.save(&state).unwrap();
+    let reporter = JobProgressReporter::new(store.clone(), "job-bounds-test".to_string());
+
+    reporter.on_event(ProgressEvent::Started {
+        total_text_files: 2,
+        total_chunks: 4,
+        completed_chunks: 0,
+        completed_text_files: 1,
+    });
+
+    // Fire FileFinished twice
+    reporter.on_event(ProgressEvent::FileFinished);
+    reporter.on_event(ProgressEvent::FileFinished);
+
+    let loaded = store.load("job-bounds-test").unwrap();
+    // completed_text_files was 1. 1 + 2 = 3, but bounds limit to 2.
+    assert_eq!(loaded.metrics.completed_text_files, 2);
+}

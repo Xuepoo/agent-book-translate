@@ -156,12 +156,24 @@ pub async fn run_with_progress_and_control(
                         usage: result.usage,
                         retries: result.retries,
                     });
-                    // Normalize translation before persisting to eliminate any
-                    // residual JSON wrapper that survived the client-side parse.
-                    // This is the definitive write point; reads normalize again
-                    // as a second-pass safety net.
                     let normalized = parse_translation_content(&result.translation)
                         .unwrap_or(result.translation);
+
+                    // Strict Write-Time Validation: reject lingering wrappers surviving API retry loops.
+                    let leaks = [
+                        "{\"translation\"",
+                        "{\"role\"",
+                        "refined_translation",
+                        "incorrect_terms",
+                    ];
+                    if leaks.iter().any(|pattern| normalized.contains(pattern)) {
+                        let error_msg = "Write-time validation failed: lingering JSON wrapper detected in translation".to_string();
+                        reporter.on_event(ProgressEvent::ChunkFailed {
+                            error: error_msg.clone(),
+                        });
+                        return Err(AppError::Translation(error_msg));
+                    }
+
                     if let Some(conn) = checkpoint_conn.as_ref() {
                         upsert_chunk_progress(
                             conn,
@@ -194,7 +206,7 @@ pub async fn run_with_progress_and_control(
                     // Write a heartbeat every 30 completed chunks so that
                     // stale-running detection sees a recent timestamp.
                     heartbeat_counter += 1;
-                    if heartbeat_counter.is_multiple_of(30)
+                    if heartbeat_counter % 30 == 0
                         && let Some(control) = job_control.as_ref()
                         && let Ok(mut state) = control.store.load(&control.job_id)
                     {

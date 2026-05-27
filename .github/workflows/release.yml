@@ -130,3 +130,76 @@ jobs:
           files: |
             dist/**/*
             release-notes.txt
+
+  publish-crates:
+    name: Publish to crates.io
+    needs: publish
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal
+          rustup default 1.85.0
+
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CRATES_TOKEN }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+  publish-aur:
+    name: Publish to AUR
+    needs: publish
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Install Arch build dependencies
+        run: |
+          pacman -Syu --noconfirm git openssh pacman-contrib sudo fakeroot binutils make gcc pkgconf
+
+      - name: Configure SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "Xuepoo (CI)"
+          git config --global user.email "xuepoofoter@gmail.com"
+
+      - name: Update AUR source package (agent-book-translate)
+        run: |
+          git clone ssh://aur@aur.archlinux.org/agent-book-translate.git aur-src
+          cd aur-src
+          CLEAN_VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${CLEAN_VERSION#v}
+          sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder .
+          su builder -c "updpkgsums && makepkg --printsrcinfo > .SRCINFO"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to v${CLEAN_VERSION}" || true
+          git push origin master
+
+      - name: Update AUR binary package (agent-book-translate-bin)
+        run: |
+          git clone ssh://aur@aur.archlinux.org/agent-book-translate-bin.git aur-bin
+          cd aur-bin
+          CLEAN_VERSION=${{ github.ref_name }}
+          CLEAN_VERSION=${CLEAN_VERSION#v}
+          sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder .
+          su builder -c "updpkgsums && makepkg --printsrcinfo > .SRCINFO"
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to v${CLEAN_VERSION}" || true
+          git push origin master

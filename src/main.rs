@@ -179,18 +179,37 @@ struct MigrateCheckpointArgs {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
-    match cli.command {
-        Some(CommandKind::Translate(args)) => translate(args).await,
-        Some(CommandKind::Start(args)) => start(args),
+    let Cli {
+        command,
+        translate: default_args,
+    } = Cli::parse();
+    let global_config = default_args.config.clone();
+    match command {
+        Some(CommandKind::Translate(mut args)) => {
+            if args.config.is_none() {
+                args.config = global_config.clone();
+            }
+            translate(args).await
+        }
+        Some(CommandKind::Start(mut args)) => {
+            if args.config.is_none() {
+                args.config = global_config.clone();
+            }
+            start(args)
+        }
         Some(CommandKind::Pause(args)) => pause(args),
-        Some(CommandKind::Resume(args)) => resume(args),
+        Some(CommandKind::Resume(mut args)) => {
+            if args.config.is_none() {
+                args.config = global_config.clone();
+            }
+            resume(args)
+        }
         Some(CommandKind::Status(args)) => status(&args.job_id),
         Some(CommandKind::List) => list_jobs(),
         Some(CommandKind::Logs(args)) => logs(&args.job_id),
         Some(CommandKind::Qa(args)) => run_qa(args),
         Some(CommandKind::MigrateCheckpoint(args)) => run_migration(args),
-        None => translate(cli.translate).await,
+        None => translate(default_args).await,
     }
 }
 

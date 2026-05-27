@@ -46,15 +46,19 @@ fn missing_default_config_path_uses_defaults() {
 
 #[test]
 fn root_level_config_flag_is_honored_for_translate_subcommand() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing_config_path = dir.path().join("missing.toml");
+    let input_path = dir.path().join("in.epub");
+    let output_path = dir.path().join("out.epub");
     let output = Command::new(env!("CARGO_BIN_EXE_agent-book-translate"))
         .args([
             "--config",
-            "/tmp/agent-book-translate-missing.toml",
+            missing_config_path.to_str().unwrap(),
             "translate",
             "--input",
-            "/tmp/in.epub",
+            input_path.to_str().unwrap(),
             "--output",
-            "/tmp/out.epub",
+            output_path.to_str().unwrap(),
         ])
         .output()
         .unwrap();

@@ -181,9 +181,9 @@ struct MigrateCheckpointArgs {
 async fn main() -> Result<()> {
     let Cli {
         command,
-        translate: default_args,
+        translate: top_level_args,
     } = Cli::parse();
-    let global_config = default_args.config.clone();
+    let global_config = top_level_args.config.clone();
     match command {
         Some(CommandKind::Translate(mut args)) => {
             if args.config.is_none() {
@@ -209,7 +209,7 @@ async fn main() -> Result<()> {
         Some(CommandKind::Logs(args)) => logs(&args.job_id),
         Some(CommandKind::Qa(args)) => run_qa(args),
         Some(CommandKind::MigrateCheckpoint(args)) => run_migration(args),
-        None => translate(default_args).await,
+        None => translate(top_level_args).await,
     }
 }
 

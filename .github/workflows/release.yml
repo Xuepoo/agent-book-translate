@@ -185,6 +185,46 @@ jobs:
         run: |
           git clone ssh://aur@aur.archlinux.org/agent-book-translate.git aur-src
           cd aur-src
+          
+          # Cold-start: Generate standard PKGBUILD template if it is an empty repository
+          if [ ! -f PKGBUILD ]; then
+            cat > PKGBUILD <<'EOF'
+# Maintainer: Xuepoo Foter <foter@example.com>
+pkgname=agent-book-translate
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A powerful LLM-driven agentic EPUB book translator with robust progress monitoring and recovery"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Xuepoo/agent-book-translate"
+license=('MIT')
+depends=('sqlite' 'openssl')
+makedepends=('cargo')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/Xuepoo/agent-book-translate/archive/v\${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "${pkgname}-${pkgver}"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "${pkgname}-${pkgver}"
+  CARGO_PROFILE_RELEASE_LTO=true cargo build --release --frozen
+}
+
+check() {
+  cd "${pkgname}-${pkgver}"
+  cargo test --frozen --lib
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+  install -Dm755 "target/release/${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
+  install -Dm644 "LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
+EOF
+          fi
+
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
           sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD
@@ -200,6 +240,38 @@ jobs:
         run: |
           git clone ssh://aur@aur.archlinux.org/agent-book-translate-bin.git aur-bin
           cd aur-bin
+          
+          # Cold-start: Generate standard PKGBUILD template if it is an empty repository
+          if [ ! -f PKGBUILD ]; then
+            cat > PKGBUILD <<'EOF'
+# Maintainer: Xuepoo Foter <foter@example.com>
+pkgname=agent-book-translate-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A powerful LLM-driven agentic EPUB book translator (binary release)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Xuepoo/agent-book-translate"
+license=('MIT')
+depends=('sqlite' 'openssl')
+provides=('agent-book-translate')
+conflicts=('agent-book-translate')
+
+source_x86_64=("\${pkgname}-x86_64-\${pkgver}::https://github.com/Xuepoo/agent-book-translate/releases/download/v\${pkgver}/agent-book-translate-linux-x86_64")
+source_aarch64=("\${pkgname}-aarch64-\${pkgver}::https://github.com/Xuepoo/agent-book-translate/releases/download/v\${pkgver}/agent-book-translate-linux-aarch64")
+
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+package() {
+  if [ "${CARCH}" = "x86_64" ]; then
+    install -Dm755 "${srcdir}/\${pkgname}-x86_64-\${pkgver}" "${pkgdir}/usr/bin/agent-book-translate"
+  elif [ "${CARCH}" = "aarch64" ]; then
+    install -Dm755 "${srcdir}/\${pkgname}-aarch64-\${pkgver}" "${pkgdir}/usr/bin/agent-book-translate"
+  fi
+}
+EOF
+          fi
+
           CLEAN_VERSION=${{ github.ref_name }}
           CLEAN_VERSION=${CLEAN_VERSION#v}
           sed -i "s/^pkgver=.*/pkgver=${CLEAN_VERSION}/" PKGBUILD

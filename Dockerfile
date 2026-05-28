@@ -13,9 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-# Use BuildKit cache mounts to prevent re-downloading and re-compiling crates
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/src/app/target \
+# Declare TARGETARCH for platform-isolated BuildKit cache mounts
+ARG TARGETARCH
+
+# Use platform-isolated BuildKit cache mounts to prevent multi-arch compiler race conditions
+RUN --mount=type=cache,id=cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-target-${TARGETARCH},target=/usr/src/app/target \
     cargo build --release && \
     cp ./target/release/agent-book-translate /tmp/agent-book-translate
 

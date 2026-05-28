@@ -112,6 +112,9 @@ struct ResumeArgs {
     #[arg(long)]
     max_spend_usd: Option<f64>,
 
+    #[arg(short = 'l', long)]
+    language: Option<String>,
+
     /// Force resume even if the job appears to be Running. Use after a crash
     /// or power loss where the process is known to be dead.
     #[arg(long, default_value_t = false)]
@@ -128,6 +131,7 @@ struct LaunchOptions {
     bilingual: bool,
     verbose: bool,
     max_spend_usd: Option<f64>,
+    language: Option<String>,
 }
 
 impl From<&TranslateArgs> for LaunchOptions {
@@ -141,6 +145,7 @@ impl From<&TranslateArgs> for LaunchOptions {
             bilingual: value.bilingual,
             verbose: value.verbose,
             max_spend_usd: value.max_spend_usd,
+            language: value.language.clone(),
         }
     }
 }
@@ -156,6 +161,7 @@ impl From<&ResumeArgs> for LaunchOptions {
             bilingual: value.bilingual,
             verbose: value.verbose,
             max_spend_usd: value.max_spend_usd,
+            language: value.language.clone(),
         }
     }
 }
@@ -466,6 +472,7 @@ fn append_launch_options(command: &mut Command, options: &LaunchOptions) {
     append_optional(command, "--api-key", options.api_key.as_deref());
     append_optional(command, "--base-url", options.base_url.as_deref());
     append_optional(command, "--model", options.model.as_deref());
+    append_optional(command, "--language", options.language.as_deref());
     if let Some(concurrency) = options.concurrency {
         command.arg("--concurrency").arg(concurrency.to_string());
     }
@@ -561,5 +568,49 @@ fn run_migration(args: MigrateCheckpointArgs) -> Result<()> {
             eprintln!("Error executing migration: {}", err);
             Err(err)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_launch_options_from_translate_args() {
+        let args = TranslateArgs {
+            language: Some("ja".to_string()),
+            config: Some(PathBuf::from("config.toml")),
+            ..Default::default()
+        };
+        let options = LaunchOptions::from(&args);
+        assert_eq!(options.language.as_deref(), Some("ja"));
+        assert_eq!(options.config.as_deref(), Some(Path::new("config.toml")));
+    }
+
+    #[test]
+    fn test_launch_options_from_resume_args() {
+        let args = ResumeArgs {
+            language: Some("en".to_string()),
+            job_id: "test-job-id".to_string(),
+            ..Default::default()
+        };
+        let options = LaunchOptions::from(&args);
+        assert_eq!(options.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn test_append_launch_options_contains_language() {
+        let options = LaunchOptions {
+            language: Some("es".to_string()),
+            config: Some(PathBuf::from("config.toml")),
+            ..Default::default()
+        };
+        let mut command = Command::new("test");
+        append_launch_options(&mut command, &options);
+        
+        let args: Vec<_> = command.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+        assert!(args.contains(&"--language".to_string()));
+        assert!(args.contains(&"es".to_string()));
+        assert!(args.contains(&"--config".to_string()));
     }
 }

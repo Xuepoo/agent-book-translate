@@ -149,6 +149,7 @@ pub async fn run_with_progress_and_control(
                 previous_context: String::new(),
                 target: chunk.text.clone(),
                 next_context: String::new(),
+                target_language: config.target_language.clone(),
             };
             match client.translate_with_stats(&ctx).await {
                 Ok(result) => {

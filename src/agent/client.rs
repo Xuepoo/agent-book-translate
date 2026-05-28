@@ -200,18 +200,38 @@ fn translation_from_json_value(value: &serde_json::Value) -> Result<String> {
         return Ok(text.to_string());
     }
 
-    let Some(object) = value.as_object() else {
-        return Err(AppError::Translation(
-            "translation response JSON is not an object".to_string(),
-        ));
-    };
+    if let Some(array) = value.as_array() {
+        if !array.is_empty() {
+            if let Some(text) = array[0].as_str() {
+                return Ok(text.to_string());
+            }
+            if let Some(candidate) = array.iter().find_map(pick_translation_candidate_nested) {
+                return Ok(candidate);
+            }
+        }
+    }
 
-    if let Some(candidate) = pick_translation_candidate(object) {
+    if let Some(object) = value.as_object() {
+        if let Some(candidate) = pick_translation_candidate(object) {
+            return Ok(candidate);
+        } else {
+            return Err(AppError::Translation(
+                "translation response JSON object does not contain expected translation fields"
+                    .to_string(),
+            ));
+        }
+    }
+
+    if let Some(candidate) = pick_translation_candidate_nested(value) {
         return Ok(candidate);
     }
 
+    if !value.is_null() && !value.is_object() && !value.is_array() {
+        return Ok(value.to_string());
+    }
+
     Err(AppError::Translation(
-        "translation response JSON does not contain translated text".to_string(),
+        "translation response JSON is empty or invalid format".to_string(),
     ))
 }
 

@@ -181,17 +181,46 @@ struct MigrateCheckpointArgs {
 async fn main() -> Result<()> {
     let Cli {
         command,
-        translate: top_level_args,
+        translate: mut top_level_args,
     } = Cli::parse();
+
+    if let Some(path) = &top_level_args.input {
+        top_level_args.input = Some(agent_book_translate::config::expand_path(path)?);
+    }
+    if let Some(path) = &top_level_args.output {
+        top_level_args.output = Some(agent_book_translate::config::expand_path(path)?);
+    }
+    if let Some(path) = &top_level_args.config {
+        top_level_args.config = Some(agent_book_translate::config::expand_path(path)?);
+    }
+
     let global_config = top_level_args.config.clone();
     match command {
         Some(CommandKind::Translate(mut args)) => {
+            if let Some(path) = &args.input {
+                args.input = Some(agent_book_translate::config::expand_path(path)?);
+            }
+            if let Some(path) = &args.output {
+                args.output = Some(agent_book_translate::config::expand_path(path)?);
+            }
+            if let Some(path) = &args.config {
+                args.config = Some(agent_book_translate::config::expand_path(path)?);
+            }
             if args.config.is_none() {
                 args.config = global_config.clone();
             }
             translate(args).await
         }
         Some(CommandKind::Start(mut args)) => {
+            if let Some(path) = &args.input {
+                args.input = Some(agent_book_translate::config::expand_path(path)?);
+            }
+            if let Some(path) = &args.output {
+                args.output = Some(agent_book_translate::config::expand_path(path)?);
+            }
+            if let Some(path) = &args.config {
+                args.config = Some(agent_book_translate::config::expand_path(path)?);
+            }
             if args.config.is_none() {
                 args.config = global_config.clone();
             }
@@ -199,6 +228,9 @@ async fn main() -> Result<()> {
         }
         Some(CommandKind::Pause(args)) => pause(args),
         Some(CommandKind::Resume(mut args)) => {
+            if let Some(path) = &args.config {
+                args.config = Some(agent_book_translate::config::expand_path(path)?);
+            }
             if args.config.is_none() {
                 args.config = global_config.clone();
             }
@@ -207,8 +239,14 @@ async fn main() -> Result<()> {
         Some(CommandKind::Status(args)) => status(&args.job_id),
         Some(CommandKind::List) => list_jobs(),
         Some(CommandKind::Logs(args)) => logs(&args.job_id),
-        Some(CommandKind::Qa(args)) => run_qa(args),
-        Some(CommandKind::MigrateCheckpoint(args)) => run_migration(args),
+        Some(CommandKind::Qa(mut args)) => {
+            args.epub = agent_book_translate::config::expand_path(&args.epub)?;
+            run_qa(args)
+        }
+        Some(CommandKind::MigrateCheckpoint(mut args)) => {
+            args.database = agent_book_translate::config::expand_path(&args.database)?;
+            run_migration(args)
+        }
         None => translate(top_level_args).await,
     }
 }
@@ -346,7 +384,9 @@ fn apply_cli_overrides(config: &mut AppConfig, args: &TranslateArgs) {
         config.max_spend_usd = Some(value);
     }
 
-    let _ = &args.language;
+    if let Some(value) = args.language.clone() {
+        config.target_language = value;
+    }
     let _ = args.verbose;
     let _ = &args.series;
     let _ = args.resume;

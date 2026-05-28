@@ -50,6 +50,7 @@ fn make_ctx(text: &str) -> PromptContext {
         previous_context: String::new(),
         target: text.to_string(),
         next_context: String::new(),
+        target_language: "Chinese".to_string(),
     }
 }
 

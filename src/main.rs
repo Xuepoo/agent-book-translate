@@ -607,8 +607,11 @@ mod tests {
         };
         let mut command = Command::new("test");
         append_launch_options(&mut command, &options);
-        
-        let args: Vec<_> = command.get_args().map(|s| s.to_string_lossy().into_owned()).collect();
+
+        let args: Vec<_> = command
+            .get_args()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
         assert!(args.contains(&"--language".to_string()));
         assert!(args.contains(&"es".to_string()));
         assert!(args.contains(&"--config".to_string()));

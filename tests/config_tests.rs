@@ -1,5 +1,6 @@
 use agent_book_translate::config::{AppConfig, load_config_file};
 use std::fs;
+use std::process::Command;
 
 #[test]
 fn explicit_config_path_overrides_default_values() {
@@ -41,4 +42,28 @@ fn missing_explicit_config_path_returns_error() {
 fn missing_default_config_path_uses_defaults() {
     let config = AppConfig::load_from_path(None).unwrap();
     assert_eq!(config.default_model, "mimo-v2.5-pro");
+}
+
+#[test]
+fn root_level_config_flag_is_honored_for_translate_subcommand() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing_config_path = dir.path().join("missing.toml");
+    let input_path = dir.path().join("in.epub");
+    let output_path = dir.path().join("out.epub");
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-book-translate"))
+        .args([
+            "--config",
+            missing_config_path.to_str().unwrap(),
+            "translate",
+            "--input",
+            input_path.to_str().unwrap(),
+            "--output",
+            output_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("config file does not exist"));
 }

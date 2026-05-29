@@ -85,9 +85,7 @@ impl TranslationClient {
                     }
                 }
                 Err(e) => {
-                    if attempt == max_parse_attempts {
-                        return Err(e);
-                    }
+                    return Err(e);
                 }
             }
 
@@ -119,6 +117,15 @@ impl TranslationClient {
                         text,
                         retries: retry_count as u64,
                     });
+                }
+                Ok(resp)
+                    if resp.status().is_client_error()
+                        && resp.status() != StatusCode::TOO_MANY_REQUESTS =>
+                {
+                    return Err(AppError::Translation(format!(
+                        "client error status: {}",
+                        resp.status()
+                    )));
                 }
                 Ok(resp) if resp.status() == StatusCode::TOO_MANY_REQUESTS => {
                     if attempt == max_attempts {

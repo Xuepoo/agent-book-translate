@@ -9,7 +9,8 @@ use agent_book_translate::core::engine::{JobControl, run_with_progress_and_contr
 use agent_book_translate::core::parser::parse_epub;
 use agent_book_translate::core::progress::JobProgressReporter;
 use agent_book_translate::db::checkpoint::open_checkpoint_db;
-use agent_book_translate::job::{JobState, JobStore};
+use agent_book_translate::job::control::request_resume;
+use agent_book_translate::job::{JobState, JobStatus, JobStore};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -290,4 +291,109 @@ async fn test_e2e_resume_resilience_on_crashes_mocked() {
 
     assert!(html1.contains("译文 1"));
     assert!(html2.contains("译文 2"));
+}
+
+#[tokio::test]
+async fn test_e2e_auto_pause_on_network_failures_mocked() {
+    let temp = TempDir::new().unwrap();
+    let epub_in = temp.path().join("input.epub");
+    let epub_out = temp.path().join("output.epub");
+
+    // Micro-epub containing a single paragraph chunk
+    let file = File::create(&epub_in).unwrap();
+    let mut writer = ZipWriter::new(file);
+    let stored_opts: FileOptions<'static, ()> =
+        FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let deflated_opts: FileOptions<'static, ()> =
+        FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    writer.start_file("mimetype", stored_opts).unwrap();
+    writer.write_all(b"application/epub+zip").unwrap();
+
+    writer
+        .start_file("OEBPS/chapter1.xhtml", deflated_opts)
+        .unwrap();
+    writer.write_all(br#"<p>Original chunk</p>"#).unwrap();
+    writer.finish().unwrap();
+
+    // Spawn Mock Server that always fails with client error 400
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(400))
+        .mount(&server)
+        .await;
+
+    let config = make_config_for(&server.uri());
+    let store = JobStore::new(temp.path().to_path_buf());
+    let job_id = "job-auto-pause-test".to_string();
+
+    let state = JobState::new(job_id.clone(), epub_in.clone(), epub_out.clone());
+    store.save(&state).unwrap();
+
+    let reporter = JobProgressReporter::new(store.clone(), job_id.clone());
+    let job_control = JobControl {
+        store: store.clone(),
+        job_id: job_id.clone(),
+    };
+
+    // Run 9 times - consecutive_failures should accumulate up to 9
+    for i in 1..=9 {
+        // Reset status to Running (simulating job resume/start)
+        let mut state = store.load(&job_id).unwrap();
+        state.status = JobStatus::Running;
+        store.save(&state).unwrap();
+
+        let res = run_with_progress_and_control(
+            &epub_in,
+            &epub_out,
+            &config,
+            &reporter,
+            Some(job_control.clone()),
+        )
+        .await;
+
+        assert!(res.is_err());
+        let loaded = store.load(&job_id).unwrap();
+        assert_eq!(loaded.consecutive_failures, i);
+        // Ensure it did not auto-pause yet, status remains unchanged by the engine (failed/running inside engine)
+        assert_ne!(loaded.status, JobStatus::Paused);
+    }
+
+    // Reset status to Running for the 10th attempt
+    let mut state = store.load(&job_id).unwrap();
+    state.status = JobStatus::Running;
+    store.save(&state).unwrap();
+
+    // 10th attempt: should trigger auto-pause inside the engine
+    let res = run_with_progress_and_control(
+        &epub_in,
+        &epub_out,
+        &config,
+        &reporter,
+        Some(job_control.clone()),
+    )
+    .await;
+
+    assert!(res.is_err());
+    let loaded = store.load(&job_id).unwrap();
+    assert_eq!(loaded.consecutive_failures, 10);
+    assert_eq!(loaded.status, JobStatus::Paused);
+    assert!(
+        loaded
+            .last_error
+            .as_ref()
+            .unwrap()
+            .contains("auto-paused: network unreachable")
+    );
+
+    // Test that a manual request_resume resets consecutive_failures to 0
+    let resumed = request_resume(&store, &job_id).unwrap();
+    assert_eq!(resumed.status, JobStatus::Running);
+    assert_eq!(resumed.consecutive_failures, 0);
+
+    // Verify it was correctly saved to store
+    let loaded_resumed = store.load(&job_id).unwrap();
+    assert_eq!(loaded_resumed.status, JobStatus::Running);
+    assert_eq!(loaded_resumed.consecutive_failures, 0);
 }

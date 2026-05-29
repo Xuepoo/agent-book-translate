@@ -78,4 +78,4 @@ Run the executable directly (e.g., `./target/debug/agent-book-translate` or the 
 
 1. **Job Recovery:** If a background run fails or stalls (e.g., due to network disconnection or API rate limits), always call `agent-book-translate status <job_id>` to read the `last_error` and then call `agent-book-translate resume <job_id>` to pick up right from where it left off.
 2. **Quality Gates:** NEVER consider a translation successful until you run `agent-book-translate qa <output.epub>` and receive `[PASS] all QA checks passed`.
-3. **Concurrency:** A concurrency limit of `3` is the optimal default. For translation speeds under tight deadlines, scale up to `5` only if you have robust API rate limit margins.
+3. **Concurrency & Rate Limits:** While a concurrency limit of `3` is functional, high RPM API limits (like `mimo-v2.5-pro` under multiple parallel jobs) can easily cause rate limiting. A single-job **`concurrency = 2`** is a highly recommended and safe default. Adjust concurrency according to your API provider's RPM limit to minimize retries and optimize overall speed.

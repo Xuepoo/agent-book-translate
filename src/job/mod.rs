@@ -57,6 +57,8 @@ pub struct JobState {
     #[serde(default)]
     pub pid: Option<u32>,
     pub metrics: JobMetrics,
+    #[serde(default)]
+    pub consecutive_failures: usize,
 }
 
 #[cfg(unix)]
@@ -92,6 +94,7 @@ impl JobState {
             last_heartbeat_at: None,
             pid: None,
             metrics: JobMetrics::default(),
+            consecutive_failures: 0,
         }
     }
 

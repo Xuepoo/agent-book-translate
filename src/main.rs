@@ -285,9 +285,11 @@ async fn translate(args: TranslateArgs) -> Result<()> {
     .await;
     if let Err(error) = &result {
         let mut state = store.load(&job_id)?;
-        state.status = JobStatus::Failed;
-        state.last_error = Some(error.to_string());
-        store.save(&state)?;
+        if state.status != JobStatus::Paused {
+            state.status = JobStatus::Failed;
+            state.last_error = Some(error.to_string());
+            store.save(&state)?;
+        }
     }
     result
 }

@@ -63,10 +63,12 @@ pub async fn run_with_progress_and_control(
     let mut completed_chunks = 0usize;
     let mut completed_text_files_from_checkpoint = 0usize;
     let mut heartbeat_counter = 0u32;
+    let mut consecutive_failures = 0usize;
     if let Some(control) = job_control.as_ref() {
         control.store.ensure_checkpoint_dir()?;
         let state = control.store.load(&control.job_id)?;
         completed_chunks = state.metrics.completed_chunks;
+        consecutive_failures = state.consecutive_failures;
         let checkpoint_path = control.store.checkpoint_path(&control.job_id);
         let conn = open_checkpoint_db(&checkpoint_path)?;
         completed_map = completed_chunk_map(&conn)?;
@@ -153,6 +155,13 @@ pub async fn run_with_progress_and_control(
             };
             match client.translate_with_stats(&ctx).await {
                 Ok(result) => {
+                    consecutive_failures = 0;
+                    if let Some(control) = job_control.as_ref()
+                        && let Ok(mut state) = control.store.load(&control.job_id)
+                    {
+                        state.consecutive_failures = 0;
+                        let _ = control.store.save(&state);
+                    }
                     reporter.on_event(ProgressEvent::RequestFinished {
                         usage: result.usage,
                         retries: result.retries,
@@ -216,6 +225,14 @@ pub async fn run_with_progress_and_control(
                     }
                 }
                 Err(error) => {
+                    consecutive_failures += 1;
+                    if let Some(control) = job_control.as_ref()
+                        && let Ok(mut state) = control.store.load(&control.job_id)
+                    {
+                        state.consecutive_failures = consecutive_failures;
+                        let _ = control.store.save(&state);
+                    }
+
                     if let Some(conn) = checkpoint_conn.as_ref() {
                         upsert_chunk_progress(
                             conn,
@@ -232,6 +249,22 @@ pub async fn run_with_progress_and_control(
                     reporter.on_event(ProgressEvent::Failed {
                         error: error.to_string(),
                     });
+
+                    if consecutive_failures >= 10 {
+                        if let Some(control) = job_control.as_ref() {
+                            let _ = auto_pause_job(
+                                &control.store,
+                                &control.job_id,
+                                consecutive_failures,
+                            );
+                        }
+                        reporter.on_event(ProgressEvent::Paused);
+                        return Err(AppError::Translation(format!(
+                            "auto-paused due to network failure after {} consecutive failures",
+                            consecutive_failures
+                        )));
+                    }
+
                     return Err(error);
                 }
             }
@@ -270,6 +303,17 @@ fn is_pause_requested(store: &JobStore, job_id: &str) -> Result<bool> {
 fn mark_paused(store: &JobStore, job_id: &str) -> Result<()> {
     let mut state = store.load(job_id)?;
     state.status = JobStatus::Paused;
+    store.save(&state)?;
+    Ok(())
+}
+
+fn auto_pause_job(store: &JobStore, job_id: &str, consecutive_failures: usize) -> Result<()> {
+    let mut state = store.load(job_id)?;
+    state.status = JobStatus::Paused;
+    state.last_error = Some(format!(
+        "auto-paused: network unreachable after {} consecutive failures",
+        consecutive_failures
+    ));
     store.save(&state)?;
     Ok(())
 }

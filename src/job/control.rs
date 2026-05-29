@@ -51,6 +51,7 @@ fn request_resume_inner(store: &JobStore, job_id: &str, force: bool) -> Result<J
                 // Safe to take over: the original process is gone.
                 state.status = JobStatus::Running;
                 state.last_error = None;
+                state.consecutive_failures = 0;
             } else {
                 return Err(AppError::Config(format!(
                     "job already running: {job_id}; use --force to override a stale running state"
@@ -60,6 +61,7 @@ fn request_resume_inner(store: &JobStore, job_id: &str, force: bool) -> Result<J
         JobStatus::Pending | JobStatus::Pausing | JobStatus::Paused | JobStatus::Failed => {
             state.status = JobStatus::Running;
             state.last_error = None;
+            state.consecutive_failures = 0;
         }
     }
     store.save(&state)?;

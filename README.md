@@ -130,3 +130,14 @@ nfpm pkg --packager deb --target ./agent-book-translate.deb
 # Pack to rpm package
 nfpm pkg --packager rpm --target ./agent-book-translate.rpm
 ```
+
+---
+
+## Best Practices & API Rate Limit Tuning
+
+When running large translation jobs with limited API quotas (e.g., `mimo-v2.5-pro` or similar providers), pay attention to **RPM (Requests Per Minute)** limits. 
+
+- **Concurrency Setting**: High concurrency (e.g., `--concurrency 3` or more) combined with multiple parallel jobs can easily hit API rate limits (RPM), resulting in a high retry rate or request failures.
+- **Recommended Default**: For a stable, unattended translation flow with standard RPM limits, we recommend setting a conservative concurrency level:
+  - **`concurrency = 2`** is a very stable default for single-job execution.
+- **Tuning**: Adjust the `--concurrency` flag based on your provider's specific rate limits. Lower concurrency ensures fewer retries and a smoother, more efficient overall translation speed.

@@ -367,7 +367,7 @@ jobs:
           git config user.email "xuepoofoter@gmail.com"
           git add Formula/agent-book-translate.rb
           git commit -m "chore: update agent-book-translate to v${VERSION}" || true
-          git push
+          git push "${REPO_URL}" HEAD:main
 
   publish-scoop:
     name: Publish to Scoop Bucket
@@ -421,4 +421,4 @@ jobs:
           git config user.email "xuepoofoter@gmail.com"
           git add bucket/agent-book-translate.json
           git commit -m "chore: update agent-book-translate to v${CLEAN_VERSION}" || true
-          git push
+          git push "${REPO_URL}" HEAD:main

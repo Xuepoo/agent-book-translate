@@ -37,7 +37,7 @@ async-openai = "0.28"
 scraper = "0.27"
 
 # SQLite storage
-rusqlite = { version = "0.33", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Error handling
 thiserror = "2"

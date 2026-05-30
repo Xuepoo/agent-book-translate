@@ -147,7 +147,14 @@ jobs:
           rustup default 1.85.0
 
       - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CRATES_TOKEN }}
+        run: |
+          cargo publish --token ${{ secrets.CRATES_TOKEN }} 2>&1 | tee publish.log || {
+            if grep -q "already exists" publish.log; then
+              echo "Crate version already exists on crates.io, skipping..."
+            else
+              exit 1
+            fi
+          }
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 

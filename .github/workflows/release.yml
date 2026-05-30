@@ -280,3 +280,145 @@ jobs:
           git add PKGBUILD .SRCINFO
           git commit -m "Update to v${CLEAN_VERSION}" || true
           git push origin master
+
+  publish-homebrew:
+    name: Publish to Homebrew Tap
+    needs: publish
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Calculate SHA256
+        id: sha
+        run: |
+          VERSION="${{ github.ref_name }}"
+          CLEAN_VERSION=${VERSION#v}
+          echo "version=${CLEAN_VERSION}" >> "$GITHUB_OUTPUT"
+
+          sleep 15
+
+          SHA_LINUX=$(sha256sum artifacts/agent-book-translate-linux-x86_64/agent-book-translate-linux-x86_64 | awk '{print $1}')
+          SHA_MACOS_X86=$(sha256sum artifacts/agent-book-translate-macos-x86_64/agent-book-translate-macos-x86_64 | awk '{print $1}')
+          SHA_MACOS_ARM=$(sha256sum artifacts/agent-book-translate-macos-aarch64/agent-book-translate-macos-aarch64 | awk '{print $1}')
+
+          echo "sha_linux=${SHA_LINUX}" >> "$GITHUB_OUTPUT"
+          echo "sha_macos_x86=${SHA_MACOS_X86}" >> "$GITHUB_OUTPUT"
+          echo "sha_macos_arm=${SHA_MACOS_ARM}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Formula
+        run: |
+          VERSION="${{ steps.sha.outputs.version }}"
+          REPO_URL="https://x-access-token:${{ secrets.GH_PAT }}@github.com/Xuepoo/homebrew-tap.git"
+
+          git clone "${REPO_URL}" tap
+          cd tap
+          mkdir -p Formula
+
+          cat > Formula/agent-book-translate.rb << 'FORMULA'
+          class AgentBookTranslate < Formula
+            desc "A powerful LLM-driven agentic EPUB book translator with robust progress monitoring and recovery"
+            homepage "https://github.com/Xuepoo/agent-book-translate"
+            version "VERSION_PLACEHOLDER"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/Xuepoo/agent-book-translate/releases/download/vVERSION_PLACEHOLDER/agent-book-translate-macos-aarch64"
+                sha256 "SHA_MACOS_ARM_PLACEHOLDER"
+              else
+                url "https://github.com/Xuepoo/agent-book-translate/releases/download/vVERSION_PLACEHOLDER/agent-book-translate-macos-x86_64"
+                sha256 "SHA_MACOS_X86_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              url "https://github.com/Xuepoo/agent-book-translate/releases/download/vVERSION_PLACEHOLDER/agent-book-translate-linux-x86_64"
+              sha256 "SHA_LINUX_PLACEHOLDER"
+            end
+
+            def install
+              if OS.mac?
+                if Hardware::CPU.arm?
+                  bin.install "agent-book-translate-macos-aarch64" => "agent-book-translate"
+                else
+                  bin.install "agent-book-translate-macos-x86_64" => "agent-book-translate"
+                end
+              elsif OS.linux?
+                bin.install "agent-book-translate-linux-x86_64" => "agent-book-translate"
+              end
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/agent-book-translate --version")
+            end
+          end
+          FORMULA
+
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" Formula/agent-book-translate.rb
+          sed -i "s/SHA_MACOS_ARM_PLACEHOLDER/${{ steps.sha.outputs.sha_macos_arm }}/g" Formula/agent-book-translate.rb
+          sed -i "s/SHA_MACOS_X86_PLACEHOLDER/${{ steps.sha.outputs.sha_macos_x86 }}/g" Formula/agent-book-translate.rb
+          sed -i "s/SHA_LINUX_PLACEHOLDER/${{ steps.sha.outputs.sha_linux }}/g" Formula/agent-book-translate.rb
+
+          git config user.name "Xuepoo (CI)"
+          git config user.email "xuepoofoter@gmail.com"
+          git add Formula/agent-book-translate.rb
+          git commit -m "chore: update agent-book-translate to v${VERSION}" || true
+          git push
+
+  publish-scoop:
+    name: Publish to Scoop Bucket
+    needs: publish
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Calculate SHA256 and Update
+        run: |
+          VERSION="${{ github.ref_name }}"
+          CLEAN_VERSION=${VERSION#v}
+          SHA_WIN=$(sha256sum artifacts/agent-book-translate-windows-x86_64.exe/agent-book-translate-windows-x86_64.exe | awk '{print $1}')
+
+          REPO_URL="https://x-access-token:${{ secrets.GH_PAT }}@github.com/Xuepoo/scoop-bucket.git"
+          git clone "${REPO_URL}" bucket
+          cd bucket
+          mkdir -p bucket
+
+          cat > bucket/agent-book-translate.json << EOF
+          {
+            "version": "${CLEAN_VERSION}",
+            "description": "A powerful LLM-driven agentic EPUB book translator with robust progress monitoring and recovery",
+            "homepage": "https://github.com/Xuepoo/agent-book-translate",
+            "license": "MIT",
+            "architecture": {
+              "64bit": {
+                "url": "https://github.com/Xuepoo/agent-book-translate/releases/download/v${CLEAN_VERSION}/agent-book-translate-windows-x86_64.exe",
+                "hash": "${SHA_WIN}",
+                "bin": [["agent-book-translate-windows-x86_64.exe", "agent-book-translate"]]
+              }
+            },
+            "checkver": {
+              "github": "https://github.com/Xuepoo/agent-book-translate"
+            },
+            "autoupdate": {
+              "architecture": {
+                "64bit": {
+                  "url": "https://github.com/Xuepoo/agent-book-translate/releases/download/v\$version/agent-book-translate-windows-x86_64.exe"
+                }
+              }
+            }
+          }
+          EOF
+
+          git config user.name "Xuepoo (CI)"
+          git config user.email "xuepoofoter@gmail.com"
+          git add bucket/agent-book-translate.json
+          git commit -m "chore: update agent-book-translate to v${CLEAN_VERSION}" || true
+          git push

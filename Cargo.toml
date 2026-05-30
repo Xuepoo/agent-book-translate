@@ -27,7 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Archive handling
-zip = "2"
+zip = "7"
 
 # HTTP client & OpenAI-compatible API
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }

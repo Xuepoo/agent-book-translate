@@ -25,7 +25,7 @@ $XDG_CONFIG_HOME/agent-book-translate/config.toml
 Use `--config <FILE>` to pass an explicit TOML file for isolated runs, agent workflows, or per-provider configurations:
 ```bash
 agent-book-translate translate \
-  --config tmp/config/xiaomi.toml \
+  --config tmp/config/openai.toml \
   --input tmp/data/epub/alice_in_wonderland.epub \
   --output tmp/output/alice.zh.epub
 ```
@@ -34,7 +34,7 @@ agent-book-translate translate \
 ```toml
 base_url = "https://example.invalid/v1"
 api_key = "replace-with-your-token"
-default_model = "mimo-v2.5-pro"
+default_model = "gpt-4o-mini"
 concurrency = 3
 bilingual = false
 http_proxy = "http://127.0.0.1:1080"
@@ -46,9 +46,9 @@ CLI flags > Environment Variables > Config File > Built-in Defaults
 ```
 
 ### Supported Environment Variables
-- `LLM_API_KEY`, `XIAOMI_API_KEY`, `OPENAI_API_KEY`
-- `LLM_BASE_URL`, `XIAOMI_BASE_URL`
-- `LLM_MODEL`, `XIAOMI_MODEL`
+- `LLM_API_KEY`, `OPENAI_API_KEY`
+- `LLM_BASE_URL`, `OPENAI_BASE_URL`
+- `LLM_MODEL`, `OPENAI_MODEL`
 - `HTTP_PROXY`, `HTTPS_PROXY`
 
 ---
@@ -135,7 +135,7 @@ nfpm pkg --packager rpm --target ./agent-book-translate.rpm
 
 ## Best Practices & API Rate Limit Tuning
 
-When running large translation jobs with limited API quotas (e.g., `mimo-v2.5-pro` or similar providers), pay attention to **RPM (Requests Per Minute)** limits. 
+When running large translation jobs with limited API quotas (e.g., `gpt-4o-mini` or similar providers), pay attention to **RPM (Requests Per Minute)** limits. 
 
 - **Concurrency Setting**: High concurrency (e.g., `--concurrency 3` or more) combined with multiple parallel jobs can easily hit API rate limits (RPM), resulting in a high retry rate or request failures.
 - **Recommended Default**: For a stable, unattended translation flow with standard RPM limits, we recommend setting a conservative concurrency level:

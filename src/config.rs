@@ -41,7 +41,7 @@ impl Default for AppConfig {
         Self {
             base_url: "https://openrouter.ai/api/v1".to_string(),
             api_key: String::new(),
-            default_model: "mimo-v2.5-pro".to_string(),
+            default_model: "gpt-4o-mini".to_string(),
             concurrency: 5,
             bilingual: false,
             max_spend_usd: None,
@@ -122,19 +122,17 @@ impl AppConfig {
     }
 
     fn apply_environment_overrides(&mut self) {
-        if let Ok(value) = env::var("LLM_API_KEY")
-            .or_else(|_| env::var("XIAOMI_API_KEY"))
-            .or_else(|_| env::var("OPENAI_API_KEY"))
+        if let Ok(value) = env::var("LLM_API_KEY").or_else(|_| env::var("OPENAI_API_KEY"))
             && !value.is_empty()
         {
             self.api_key = value;
         }
-        if let Ok(value) = env::var("LLM_BASE_URL").or_else(|_| env::var("XIAOMI_BASE_URL"))
+        if let Ok(value) = env::var("LLM_BASE_URL").or_else(|_| env::var("OPENAI_BASE_URL"))
             && !value.is_empty()
         {
             self.base_url = value;
         }
-        if let Ok(value) = env::var("LLM_MODEL").or_else(|_| env::var("XIAOMI_MODEL"))
+        if let Ok(value) = env::var("LLM_MODEL").or_else(|_| env::var("OPENAI_MODEL"))
             && !value.is_empty()
         {
             self.default_model = value;

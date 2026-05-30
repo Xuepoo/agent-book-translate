@@ -40,8 +40,11 @@ fn missing_explicit_config_path_returns_error() {
 
 #[test]
 fn missing_default_config_path_uses_defaults() {
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", "/nonexistent-path-for-test");
+    }
     let config = AppConfig::load_from_path(None).unwrap();
-    assert_eq!(config.default_model, "mimo-v2.5-pro");
+    assert_eq!(config.default_model, "gpt-4o-mini");
 }
 
 #[test]

@@ -31,7 +31,7 @@ zip = "7"
 
 # HTTP client & OpenAI-compatible API
 reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
-async-openai = "0.28"
+async-openai = "0.41"
 
 # HTML/XML parsing
 scraper = "0.27"

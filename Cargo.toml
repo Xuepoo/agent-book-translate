@@ -20,7 +20,7 @@ clap = { version = "4", features = ["derive"] }
 
 # Configuration
 toml = "1.1"
-dirs = "6"
+dirs = "7"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
